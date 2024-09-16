@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <title>Monitor de Pesajes</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+
+  <!-- Bootstrap CSS (local) -->
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet" />
+  <link href="{{ url_for('static', filename='bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet" />
+
+  <!-- DataTables CSS (local) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='Datatables/css/dataTables.css') }}">
+
+  <!-- Fullcalendar CSS (local) -->
+  <link href="{{ url_for('static', filename='fullcalendar/css/main.min.css') }}" rel="stylesheet" />
+
+  <!-- Custom CSS -->
+  <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
+
+  <style>
+    html, body {
+      height: 100%;
+      background-color: #edf5e3;
+    }
+
+    .container {
+      flex: 1;
+    }
+  </style>
+
+  {% block style %}{% endblock %}
+</head>
+
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-secondary bg-gradient px-2">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">
+        <img src="{{ url_for('static', filename='png/logo.jpg') }}" alt="Logo" style="height: 56px" />
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+        aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <div class="navbar-nav ms-auto">
+          <a class="nav-item nav-link" href="/">Inicio</a>
+          {% if 'usuario' in session %}
+          <a class="nav-item nav-link" href="/pesajes">Pesajes</a>
+          {% else %}
+          <a class="nav-item nav-link" href="/login">Login</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">{% block content %}{% endblock %}</div>
+
+  <footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+      <span class="text-muted">&copy; 2024 Sistemas Pindo. Todos los derechos reservados.</span>
+    </div>
+  </footer>
+
+  <!-- Bootstrap JS (local) -->
+  <script src="{{ url_for('static', filename='bootstrap/js/jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/popper.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
+
+  <!-- DataTables JS (local) -->
+  <script src="{{ url_for('static', filename='Datatables/js/dataTables.min.js') }}"></script>
+
+  <!-- FullCalendar JS (local) -->
+  <script src="{{ url_for('static', filename='fullcalendar/js/main.min.js') }}"></script>
+
+  <!-- Custom JS -->
+  {% block scripts %}{% endblock %}
+</body>
+</html>

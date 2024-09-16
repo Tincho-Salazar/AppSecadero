@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+
+{% block style %}
+<style>
+  .dashboard {
+    padding: 20px;
+  }
+  .chart-container {
+    width: 100%;
+    margin: 0 auto;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+  <h2 class="text-center">Monitor de Pesajes y Rendimiento</h2>
+
+  <!-- Información del producto y pesaje actual -->
+  <div class="row my-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>Producto Actual:</h5>
+          <p id="producto-actual">Cargando...</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>Pesaje Actual:</h5>
+          <p id="pesaje-actual">Cargando...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gráfico del pesaje por hora -->
+  <div class="row my-4">
+    <div class="col-md-12">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>Pesajes por Hora</h5>
+          <div class="chart-container">
+            <canvas id="graficoPesajes"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gráfico de rendimiento por empleado -->
+  <div class="row my-4">
+    <div class="col-md-12">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>Rendimiento por Empleado</h5>
+          <div class="chart-container">
+            <canvas id="graficoRendimiento"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function actualizarDatos() {
+    fetch('/api/datos', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+      // Actualizar datos del producto y pesaje actual
+      document.getElementById("producto-actual").innerText = data.producto_actual;
+      document.getElementById("pesaje-actual").innerText = data.pesaje_actual + " kg";
+
+      // Actualizar gráfico de pesajes por hora
+      actualizarGraficoPesajes(data.horas, data.pesajes_por_hora);
+
+      // Actualizar gráfico de rendimiento por empleado
+      actualizarGraficoRendimiento(data.empleados, data.rendimiento_empleados);
+    })
+    .catch(error => console.error('Error:', error));
+  }
+
+  function actualizarGraficoPesajes(labels, data) {
+    const ctx = document.getElementById('graficoPesajes').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Pesajes (kg)',
+          data: data,
+          borderColor: 'rgba(75, 192, 192, 1)',
+          fill: false
+        }]
+      }
+    });
+  }
+
+  function actualizarGraficoRendimiento(labels, data) {
+    const ctx = document.getElementById('graficoRendimiento').getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Bolsas por Empleado',
+          data: data,
+          backgroundColor: 'rgba(153, 102, 255, 0.6)',
+        }]
+      }
+    });
+  }
+
+  // Actualiza los datos cada 5 segundos
+  setInterval(actualizarDatos, 5000);
+</script>
+{% endblock %}

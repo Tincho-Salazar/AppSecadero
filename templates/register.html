@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+  <div id="toastContainer" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+  <div id="toastTemplate" class="toast align-items-center border-0" 
+    role="alert" aria-live="assertive" aria-atomic="true" style="display: none">
+    <div class="d-flex">
+      <div class="toast-body"></div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-progress"></div> <!-- Progress bar element -->
+  </div>
+
+  <div class="bg-white p-5 rounded-5 text-secondary shadow" style="width: 25rem; margin: auto; padding: 5rem">
+    <div class="d-flex justify-content-center">
+      <img src="{{ url_for('static', filename='svg/register-icon.svg') }}" alt="register-icon" style="height: 7rem; color: gray" />
+    </div>
+    <div class="text-center fs-1 fw-bold">Registrarse</div>
+    <form id="registerForm" action="{{ url_for('register') }}" method="post">
+      <div class="input-group mt-4">
+        <div class="input-group-text bg-info">
+          <img src="{{ url_for('static', filename='svg/username-icon.svg') }}" alt="username-icon" style="height: 1rem" />
+        </div>
+        <input class="form-control bg-light" type="text" name="new_usuario" placeholder="Usuario" required autocomplete="username" />
+      </div>
+      <div class="input-group mt-1">
+        <div class="input-group-text bg-info">
+          <img src="{{ url_for('static', filename='svg/password-icon.svg') }}" alt="password-icon" style="height: 1rem" />
+        </div>
+        <input class="form-control bg-light" type="password" name="new_contrasena" placeholder="Contraseña" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn btn-info text-white w-100 mt-4 fw-semibold shadow-sm">Registrarse</button>
+    </form>
+    <div class="d-flex gap-1 justify-content-center mt-1">
+      <div>¿Ya tienes una cuenta?</div>
+      <a href="{{ url_for('login') }}" class="text-decoration-none text-info fw-semibold">Inicia sesión</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/toast.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('registerForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            let form = e.target;
+            let url = form.action;
+            let formData = new FormData(form);
+
+            fetch(url, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    showToast(data.message, 'success');
+                    form.reset();
+                }
+            })
+            .catch(error => {
+                showToast('Ha ocurrido un error', 'danger');
+            });
+        });
+    });
+</script>
+{% endblock %}

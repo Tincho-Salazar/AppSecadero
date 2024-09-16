@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="toastContainer" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+<div id="toastTemplate" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true"
+    style="display: none;">
+    <div class="d-flex">
+        <div class="toast-body">
+            <strong id="toastTitle" class="me-auto"></strong>
+            <div id="toastBody"></div>
+        </div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+</div>
+
+<div class="row justify-content-center align-items-center min-vh-100">
+    <div class="col-md-8 col-lg-6 col-xl-4">
+        <div class="bg-light p-4 rounded-4 shadow-lg text-secondary" style="max-width: 100%; margin: auto;">
+            <div class="text-center mb-4">
+                <img src="{{ url_for('static', filename='svg/login-icon.svg') }}" alt="login-icon" class="img-fluid" style="height: 5rem;" />
+            </div>
+            <h2 class="text-center fw-bold mb-4">Inicio de Sesión</h2>
+            <form id="login-form" action="{{ url_for('login') }}" method="post">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <span class="input-group-text bg-info text-white">
+                            <img src="{{ url_for('static', filename='svg/username-icon.svg') }}" alt="username-icon" style="height: 1.2rem;" />
+                        </span>
+                        <input class="form-control" type="text" name="usuario" placeholder="Usuario" required autocomplete="username" value="{{ username }}" />
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <div class="input-group">
+                        <span class="input-group-text bg-info text-white">
+                            <img src="{{ url_for('static', filename='svg/password-icon.svg') }}" alt="password-icon" style="height: 1.2rem;" />
+                        </span>
+                        <input class="form-control" type="password" name="contrasena" placeholder="Contraseña" required autocomplete="current-password" />
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <a href="#" class="text-info fw-semibold">¿Olvidaste tu contraseña?</a>
+                </div>
+                <button type="submit" class="btn btn-info text-white w-100 fw-semibold">Iniciar Sesión</button>
+            </form>
+            <div class="text-center mt-3">
+                <span>¿No tienes una cuenta?</span>
+                <a href="{{ url_for('register') }}" class="text-info fw-semibold">Regístrate</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/toast.js') }}"></script>
+
+<script>
+    $(document).ready(function () {
+        $('#login-form').on('submit', function (event) {
+            event.preventDefault(); // Evita el envío del formulario por defecto
+
+            var formData = $(this).serialize();
+
+            $.ajax({
+                url: $(this).attr('action'),
+                type: 'POST',
+                data: formData,
+                dataType: 'json',
+                success: function (response) {
+                    if (response.status === 'success') {
+                        window.location.href = response.redirect;
+                    } else if (response.status === 'error') {
+                        showToast(response.message, 'danger');
+                    }
+                },
+                error: function (xhr, status, error) {
+                    showToast('Ocurrió un error inesperado', 'danger');
+                }
+            });
+        });
+    });
+</script>
+
+{% endblock %}

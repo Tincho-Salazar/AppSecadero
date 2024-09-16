@@ -1,0 +1,205 @@
+/* static/css/estilos.css */
+body {
+  background-color: #f8f9fa; /* Color gris claro */
+}
+
+.modal-header {
+  background-color: #343a40;
+  color: #ffffff;
+}
+
+.card-header {
+  background-color: #343a40;
+  color: #fff;
+}
+
+h4 {
+  color: #007bff;
+}
+
+label {
+  font-weight: bold;
+}
+
+.form-control,
+.form-select,
+.btn-primary {
+  border-radius: 0.25rem;
+}
+
+.marco {
+  background-color: #f8f9fa; /* Color de fondo resaltado */
+  border-radius: 15px; /* Bordes redondeados */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra */
+  border: 0.75px solid rgb(216, 215, 215);
+}
+
+.marco {
+  background-color: #f8f9fa; /* Color de fondo resaltado */
+  border-radius: 15px; /* Bordes redondeados */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); /* Sombra */
+}
+
+/* .card {
+    border: none; 
+  } */
+
+.custom-rounded-card:hover {
+  border: 2px solid #007bff; /* Borde azulado en hover */
+}
+
+.border-red:hover {
+  border: 2px solid red !important; /* Borde rojo si no está habilitado */
+}
+.card-body img {
+  height: 100%; /* Ocupa toda la altura de la tarjeta */
+  object-fit: cover; /* Ajuste de la imagen */
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* .table thead th {
+    background-color: #007bff;
+    color: #fff;
+}
+
+.table tbody tr:nth-child(even) {
+    background-color: #f2f2f2;
+} */
+
+.btn-warning {
+  color: #fff;
+  background-color: #ffc107;
+  border-color: #ffc107;
+}
+
+.btn-danger {
+  color: #fff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+
+.container {
+  margin-top: 30px;
+}
+
+/* Estilo para el texto en blanco */
+.text-white {
+  color: white !important; /* !important para asegurar que sobrescriba cualquier otro estilo */
+}
+
+/* Estilo para el fondo secundario con gradiente */
+.bg-secondary.bg-gradient {
+  background: linear-gradient(
+    to right,
+    #6c757d,
+    #343a40
+  ) !important; /* Personaliza los colores del gradiente según tus preferencias */
+}
+
+/* Efecto de hover */
+.navbar-nav .nav-item .nav-link:hover {
+  color: #e2df14 !important; /* Color de resaltado al hacer hover */
+}
+
+#toast-container {
+  position: absolute;
+  bottom: 30px;
+  right: 30px;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 20px;
+}
+.toast {
+  width: 400px;
+  height: 80px;
+  background: #fff;
+  font-weight: 500;
+  margin: 15px 0;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+}
+
+.toast i {
+  margin: 0 20px;
+  font-size: 35px;
+  color: green;
+}
+
+.toast.error i {
+  color: red;
+}
+
+.toast.invalid i {
+  color: orange;
+}
+
+img .text-success {
+  color: green;
+}
+
+.custom-btn {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Añadir sombra */
+  background-color: #f8f9fa; /* Fondo adecuado para que resalte en card blanca */
+  border: none; /* Quitar borde */
+  transition: transform 0.2s; /* Añadir transición para efecto hover */
+}
+
+.custom-btn:hover {
+  transform: scale(1.05); /* Efecto de agrandamiento al pasar el mouse */
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15); /* Incrementar sombra en hover */
+}
+
+.custom-badge {
+  font-size: 0.6rem; /* Reduce the font size further */
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  transform: translate(50%, 50%);
+  padding: 0.1em 0.3em; /* Adjust padding if necessary */
+}
+.btn-icon {
+  position: relative;
+  /* padding-right: 1.5rem;  Ensure space for the badge */
+}
+
+/* efectos para los tabs */
+.nav-link {
+  border-radius: 0.5rem;
+  transition: box-shadow 0.3s ease-in-out;
+}
+
+.nav-link.active {
+  border: 2px solid transparent; /* Establece un borde transparente para mantener el espacio */
+  box-shadow: inset 0 0 10px rgba(236, 115, 30, 0.5),
+    /* Resplandor interno naranja */ 0 -4px 10px rgba(236, 115, 30, 0.5),
+    /* Resplandor en el borde superior */ 4px 0 10px rgba(236, 115, 30, 0.5),
+    /* Resplandor en el borde derecho */ -4px 0 10px rgba(236, 115, 30, 0.5); /* Resplandor en el borde izquierdo */
+}
+
+.nav-tabs .nav-link {
+  border-color: transparent;
+  border-radius: 0.5rem;
+}
+
+.nav-tabs .nav-link.active {
+  border-color: #ec731e; /* Color del borde del tab activo */
+  border-width: 2px;
+  border-style: solid;
+  border-radius: 0.5rem;
+  box-shadow: 0 -4px 10px rgba(236, 115, 30, 0.5),
+    /* Resplandor en el borde superior */ 4px 0 10px rgba(236, 115, 30, 0.5),
+    /* Resplandor en el borde derecho */ -4px 0 10px rgba(236, 115, 30, 0.5); /* Resplandor en el borde izquierdo */
+}

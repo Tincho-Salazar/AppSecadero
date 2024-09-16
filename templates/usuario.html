@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div id="toastContainer" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+<div id="toastTemplate" class="toast align-items-center border-0" role="alert" aria-live="assertive" aria-atomic="true"
+    style="display: none;">
+    <div class="d-flex">
+        <div class="toast-body">
+            <strong id="toastTitle" class="me-auto"></strong>
+            <div id="toastBody"></div>
+        </div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+</div>
+
+<h1>Gestión de Usuarios</h1>
+<hr>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                {{ 'Nuevo Usuario' if not usuario_editado else 'Editar Usuario' }}
+            </div>
+            <div class="card-body">
+                <form id="formularioUsuario" method="POST"
+                    action="{% if usuario_editado %}/editar_usuario/{{ usuario_editado[0] }}{% else %}/crear_usuario{% endif %}">
+                    <div class="mb-3">
+                        <label for="usuario" class="form-label">Usuario</label>
+                        <input type="text" class="form-control" id="usuario" name="usuario"
+                            value="{{ usuario_editado[1] if usuario_editado else '' }}" required
+                            autocomplete="username">
+                    </div>
+                    <div class="mb-3">
+                        <label for="contrasena" class="form-label">Contraseña</label>
+                        <input type="password" class="form-control" id="contrasena" name="contrasena" required
+                            autocomplete="current-password" autocomplete="current-password">
+                    </div>
+                    <div class="mb-3">
+                        <label for="rol" class="form-label">Rol</label>
+                        <select class="form-control" id="rol" name="rol" required>
+                            <option value="administrador" {% if usuario_editado and usuario_editado[3]=='administrador'
+                                %}selected{% endif %}>Administrador</option>
+                            <option value="usuario" {% if usuario_editado and usuario_editado[3]=='usuario' %}selected{%
+                                endif %}>Usuario</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">{{ 'Guardar Cambios' if usuario_editado else 'Crear
+                        Usuario' }}</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                Listado de Usuarios
+            </div>
+            <div class="card-body">
+                <table id="usuarios" class="table table-striped table-bordered table-hover" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Usuario</th>
+                            <th>Rol</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for usuario in usuarios %}
+                        <tr>
+                            <td>{{ usuario[0] }}</td>
+                            <td>{{ usuario[1] }}</td>
+                            <td>{{ usuario[3] }}</td>
+                            <td>
+                                <a href="#" class="btn btn-warning btn-sm edit-usuario" data-id="{{ usuario[0] }}"
+                                    data-usuario="{{ usuario[1] }}" data-rol="{{ usuario[3] }}"><i
+                                        class="bi bi-pencil"></i></a>
+                                <a href="#" class="btn btn-danger btn-sm delete-usuario" data-id="{{ usuario[0] }}"><i
+                                        class="bi bi-trash"></i></a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmación -->
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-labelledby="confirmDeleteLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmDeleteLabel">Confirmar eliminación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                ¿Estás seguro de que deseas eliminar este usuario?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteButton">Eliminar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='/js/toast.js') }}"></script>
+<script src="{{ url_for('static', filename='Datatables/js/dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='Datatables/js/buttons.print.min.js') }}"></script>
+<script>
+    $(document).ready(function () {
+        var deleteUserId = null;
+        $('#usuarios').DataTable({
+            "language": {
+                "url": '{{ url_for("static", filename="Datatables/plug-ins/es-ES.json") }}',
+                "paginate": {
+                    "first": "&laquo;&laquo;", // símbolo de primero
+                    "last": "&raquo;&raquo;", // símbolo de último
+                    "previous": "&lt;", // símbolo de anterior
+                    "next": "&gt;" // símbolo de siguiente
+                }
+            },
+            "responsive" :true,
+            "paging": true,
+            "searching": true,
+            "ordering": true,
+            "lengthChange": true,
+            "pageLength": 10,
+            "resposive": true,
+            "dom": 'Bfrtip',
+            "buttons": ['csv', 'excel', 'pdf', 'copy', 'print', 'pageLength'],
+            "select": true
+        });
+
+        // Manejar la eliminación de un usuario
+        $('.delete-usuario').click(function (e) {
+            e.preventDefault();
+            deleteUserId = $(this).data('id');
+            var modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+            modal.show();
+        });
+
+        $('#confirmDeleteButton').click(function () {
+            if (deleteUserId) {
+                $.ajax({
+                    url: '/eliminar_usuario/' + deleteUserId,
+                    type: 'DELETE',
+                    success: function (response) {
+                        var bsToast = showToast(response.message, 'success');
+                        bsToast._element.addEventListener('hidden.bs.toast', function () {
+                            location.reload();
+                        });
+                    },
+                    error: function (xhr) {
+                        var response = xhr.responseJSON;
+                        showToast(response.message || 'Ha ocurrido un error', 'danger');
+                    }
+                });
+                var modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
+                modal.hide();
+            }
+        });
+
+        // Manejar la respuesta del formulario de creación/edición
+        $('#formularioUsuario').submit(function (e) {
+            e.preventDefault();
+            var form = $(this);
+            var url = form.attr('action');
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: form.serialize(),
+                success: function (response) {
+                    var bsToast = showToast(response.message, 'success');
+                    bsToast._element.addEventListener('hidden.bs.toast', function () {
+                        location.reload();
+                    });
+                    form.trigger('reset');
+                },
+                error: function (xhr) {
+                    var response = xhr.responseJSON;
+                    showToast(response.message || 'Ha ocurrido un error', 'danger');
+                }
+            });
+        });
+
+        // Manejar la edición de un usuario
+        $('.edit-usuario').click(function (e) {
+            e.preventDefault();
+            var id = $(this).data('id');
+            var usuario = $(this).data('usuario');
+            var rol = $(this).data('rol');
+            $('#usuario').val(usuario);
+            $('#contrasena').val('');
+            $('#rol').val(rol);
+            $('#formularioUsuario').attr('action', '/editar_usuario/' + id);
+
+            var btnSuccess = $('#formularioUsuario').find('.btn-primary');
+
+            if (btnSuccess.text().trim() === 'Crear Usuario') {
+                btnSuccess.text('Guardar Cambios');
+            } else {
+                btnSuccess.text('Crear Usuario');
+                // Limpiar el formulario
+                $('#usuario').val('');
+                $('#contrasena').val('');
+                $('#rol').val('');
+                $('#formularioUsuario').attr('action', '/crear_usuario'); // Ajusta la acción según sea necesario
+            }
+        });
+    });
+</script>
+{% endblock %}
