@@ -20,7 +20,8 @@
   <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet" />
 
   <style>
-    html, body {
+    html,
+    body {
       height: 100%;
       background-color: #edf5e3;
     }
@@ -47,7 +48,23 @@
         <div class="navbar-nav ms-auto">
           <a class="nav-item nav-link" href="/">Inicio</a>
           {% if 'usuario' in session %}
-          <a class="nav-item nav-link" href="/pesajes">Pesajes</a>
+          {% if session['rol'] == 'ADMINISTRADOR' %}
+          <a class="nav-item nav-link" href="/admin/productos">Productos</a>
+          <a class="nav-item nav-link" href="/admin/usuarios">Usuarios</a>
+          {% endif %}
+          {% if session['rol'] in ['administrador', 'usuario'] %}
+          <a class="nav-item nav-link" href="/calendario">Calendario</a>
+          {% endif %}
+          <li class="nav-item dropdown mx-4" style="right: 1rem">
+            <div class="text-white mt-2">{{ session['usuario'] }}</div>
+            <a class="nav-link dropdown-toggle user-info" href="#" role="button" data-bs-toggle="dropdown"
+              aria-expanded="false">
+              <i class="bi bi-person-circle" style="font-size: 32px; color: greenyellow"></i>
+            </a>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="/logout">Logout</a></li>
+            </ul>
+          </li>
           {% else %}
           <a class="nav-item nav-link" href="/login">Login</a>
           {% endif %}
@@ -78,4 +95,5 @@
   <!-- Custom JS -->
   {% block scripts %}{% endblock %}
 </body>
+
 </html>

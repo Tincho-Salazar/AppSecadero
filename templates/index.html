@@ -5,9 +5,67 @@
   .dashboard {
     padding: 20px;
   }
+
+  /* Estilo para contenedor de la tarjeta */
+  .card {
+    margin: 10px 0;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border: none;
+  }
+
+  /* Estilo del cuerpo de la tarjeta */
+  .card-body {
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 8px;
+  }
+
+  /* Estilo para el contenedor del gráfico */
   .chart-container {
+    position: relative;
     width: 100%;
-    margin: 0 auto;
+    max-width: 800px;
+    height: auto;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  #total-mensual {
+    max-width: 300px;
+    margin-right: 20px;
+  }
+
+  /* Estilo para la imagen del gráfico */
+  .chart-container img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+  }
+
+  /* Estilo para los títulos */
+  .card h5 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #333;
+  }
+
+  /* Adaptación para pantallas pequeñas */
+  @media (max-width: 768px) {
+    .chart-container {
+      padding: 10px;
+    }
+
+    .card {
+      padding: 15px;
+    }
+
+    .card-body {
+      padding: 10px;
+    }
   }
 </style>
 {% endblock %}
@@ -18,7 +76,7 @@
 
   <!-- Información del producto y pesaje actual -->
   <div class="row my-4">
-    <div class="col-md-6">
+    <div class="col-md-4">
       <div class="card shadow-sm">
         <div class="card-body">
           <h5>Producto Actual:</h5>
@@ -26,11 +84,38 @@
         </div>
       </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-4">
       <div class="card shadow-sm">
         <div class="card-body">
           <h5>Pesaje Actual:</h5>
           <p id="pesaje-actual">Cargando...</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>Total Diario por Producto</h5>
+          <div id="total-diario">Cargando...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historial de Pesajes Mensual -->
+  <div class="row my-4">
+    <div class="col-md-12">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5>Total Mensual por Producto</h5>
+          <div class="d-flex justify-content-between">
+            <div id="total-mensual" class="p-2" style="flex: 1;">
+              Cargando...
+            </div>
+            <div class="chart-container p-2" style="flex: 2;">
+              <img id="graficoMensualProductos" src="{{ url_for('grafico_mensual_productos') }}" alt="Gráfico de Barras de Total Mensual" style="width: 100%; height: auto;">
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -43,7 +128,7 @@
         <div class="card-body">
           <h5>Pesajes por Hora</h5>
           <div class="chart-container">
-            <canvas id="graficoPesajes"></canvas>
+            <img id="graficoPesajes" src="{{ url_for('grafico_pesajes') }}" alt="Gráfico de Pesajes">
           </div>
         </div>
       </div>
@@ -57,7 +142,7 @@
         <div class="card-body">
           <h5>Rendimiento por Empleado</h5>
           <div class="chart-container">
-            <canvas id="graficoRendimiento"></canvas>
+            <img id="graficoRendimiento" src="{{ url_for('grafico_rendimiento') }}" alt="Gráfico de Rendimiento">
           </div>
         </div>
       </div>
@@ -68,58 +153,77 @@
 
 {% block scripts %}
 <script>
-  function actualizarDatos() {
-    fetch('/api/datos', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-      // Actualizar datos del producto y pesaje actual
-      document.getElementById("producto-actual").innerText = data.producto_actual;
-      document.getElementById("pesaje-actual").innerText = data.pesaje_actual + " kg";
-
-      // Actualizar gráfico de pesajes por hora
-      actualizarGraficoPesajes(data.horas, data.pesajes_por_hora);
-
-      // Actualizar gráfico de rendimiento por empleado
-      actualizarGraficoRendimiento(data.empleados, data.rendimiento_empleados);
-    })
-    .catch(error => console.error('Error:', error));
-  }
-
-  function actualizarGraficoPesajes(labels, data) {
-    const ctx = document.getElementById('graficoPesajes').getContext('2d');
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: 'Pesajes (kg)',
-          data: data,
-          borderColor: 'rgba(75, 192, 192, 1)',
-          fill: false
-        }]
+    function actualizarGraficoMensual() {
+      const img = document.getElementById('graficoMensualProductos');
+      if (img) {
+        // Llamar a la ruta de Flask para obtener el gráfico dinámico y agregar un timestamp para evitar caché
+        img.src = '/grafico/mensual-productos?' + new Date().getTime();
+      } else {
+        console.error("No se encontró el contenedor para el gráfico de total mensual por producto.");
       }
-    });
-  }
+    }
 
-  function actualizarGraficoRendimiento(labels, data) {
-    const ctx = document.getElementById('graficoRendimiento').getContext('2d');
-    new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: 'Bolsas por Empleado',
-          data: data,
-          backgroundColor: 'rgba(153, 102, 255, 0.6)',
-        }]
+    function inicializarPagina() {
+      // Inicializa y carga los datos cuando la página esté lista
+      actualizarDatos();  // Carga los datos inicialmente
+
+      // Llamar a la función para cargar el gráfico de total mensual
+      actualizarGraficoMensual(); // Carga el gráfico de total mensual al iniciar
+      setInterval(actualizarGrafico, 5000);  // Actualiza el gráfico de pesajes cada 5 segundos
+    }
+
+    function actualizarDatos() {
+      fetch('/api/datos', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
+        .then(response => response.json())
+        .then(data => {
+          // Verificar si los datos se recibieron correctamente
+          if (data) {
+            console.log("Datos recibidos:", data);
+            document.getElementById("producto-actual").innerText = data.producto_actual || "No disponible";
+            document.getElementById("pesaje-actual").innerText = (data.pesaje_actual || 0) + " kg";
+            actualizarEstadisticas();  // Llama a la función para actualizar las estadísticas
+          } else {
+            console.error("Error: Los datos recibidos están vacíos.");
+          }
+        })
+        .catch(error => console.error('Error al actualizar los datos:', error));
+    }
+
+    function actualizarGrafico() {
+      const img = document.getElementById('graficoPesajes');
+      if (img) {
+        img.src = '/grafico/pesajes?' + new Date().getTime();  // Recargar imagen para evitar caché
+      } else {
+        console.error("El gráfico no se encontró en el DOM");
       }
-    });
-  }
+    }
 
-  // Actualiza los datos cada 5 segundos
-  setInterval(actualizarDatos, 5000);
+    function actualizarEstadisticas() {
+      fetch('/api/estadisticas', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
+        .then(response => response.json())
+        .then(data => {
+          let totalDiarioHTML = "";
+          if (data.total_diario) {
+            data.total_diario.forEach(item => {
+              totalDiarioHTML += `<p><strong>${item.producto}:</strong> ${item.total_diario} kg</p>`;
+            });
+          }
+          document.getElementById("total-diario").innerHTML = totalDiarioHTML || "No hay datos disponibles";
+
+          let totalMensualHTML = "";
+          if (data.total_mensual) {
+            data.total_mensual.forEach(item => {
+              totalMensualHTML += `<p><strong>${item.producto}:</strong> ${item.total_mensual} kg</p>`;
+            });
+          }
+          document.getElementById("total-mensual").innerHTML = totalMensualHTML || "No hay datos disponibles";
+        })
+        .catch(error => console.error('Error al actualizar las estadísticas:', error));
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      // Asegúrate de que los gráficos se carguen cuando la página esté lista
+      inicializarPagina(); // Inicializa la página
+    });
 </script>
 {% endblock %}
