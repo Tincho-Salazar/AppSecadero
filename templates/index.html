@@ -113,7 +113,8 @@
               Cargando...
             </div>
             <div class="chart-container p-2" style="flex: 2;">
-              <img id="graficoMensualProductos" src="{{ url_for('grafico_mensual_productos') }}" alt="Gráfico de Barras de Total Mensual" style="width: 100%; height: auto;">
+              <img id="graficoMensualProductos" src="{{ url_for('grafico_mensual_productos') }}"
+                alt="Gráfico de Barras de Total Mensual" style="width: 100%; height: auto;">
             </div>
           </div>
         </div>
@@ -153,77 +154,85 @@
 
 {% block scripts %}
 <script>
-    function actualizarGraficoMensual() {
-      const img = document.getElementById('graficoMensualProductos');
-      if (img) {
-        // Llamar a la ruta de Flask para obtener el gráfico dinámico y agregar un timestamp para evitar caché
-        img.src = '/grafico/mensual-productos?' + new Date().getTime();
-      } else {
-        console.error("No se encontró el contenedor para el gráfico de total mensual por producto.");
-      }
-    }
+// Función para inicializar la página
+document.addEventListener("DOMContentLoaded", function () {
+    // Cargar los datos inicialmente
+    actualizarPesajeYProducto();
 
-    function inicializarPagina() {
-      // Inicializa y carga los datos cuando la página esté lista
-      actualizarDatos();  // Carga los datos inicialmente
+    // Actualizar los datos cada 5 segundos
+    setInterval(actualizarPesajeYProducto, 5000);
 
-      // Llamar a la función para cargar el gráfico de total mensual
-      actualizarGraficoMensual(); // Carga el gráfico de total mensual al iniciar
-      setInterval(actualizarGrafico, 5000);  // Actualiza el gráfico de pesajes cada 5 segundos
-    }
+    // Cargar el gráfico mensual al iniciar
+    actualizarGraficoMensual();  
 
-    function actualizarDatos() {
-      fetch('/api/datos', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
+    // Actualizar el gráfico de pesajes cada 5 segundos
+    setInterval(actualizarGrafico, 5000);
+});
+
+// Función para actualizar el pesaje actual y el producto actual con AJAX
+function actualizarPesajeYProducto() {
+    fetch('/api/datos', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
         .then(response => response.json())
         .then(data => {
-          // Verificar si los datos se recibieron correctamente
-          if (data) {
-            console.log("Datos recibidos:", data);
-            document.getElementById("producto-actual").innerText = data.producto_actual || "No disponible";
-            document.getElementById("pesaje-actual").innerText = (data.pesaje_actual || 0) + " kg";
-            actualizarEstadisticas();  // Llama a la función para actualizar las estadísticas
-          } else {
-            console.error("Error: Los datos recibidos están vacíos.");
-          }
+            // Verificar si los datos se recibieron correctamente
+            if (data) {
+                console.log("Datos recibidos:", data);
+                document.getElementById("producto-actual").innerText = data.producto_actual || "No disponible";
+                document.getElementById("pesaje-actual").innerText = (data.pesaje_actual || 0) + " kg";
+                // Puedes llamar a otras funciones para actualizar estadísticas o gráficos si es necesario
+                actualizarEstadisticas(); // Llama a la función para actualizar estadísticas
+            } else {
+                console.error("Error: Los datos recibidos están vacíos.");
+            }
         })
         .catch(error => console.error('Error al actualizar los datos:', error));
-    }
+}
 
-    function actualizarGrafico() {
-      const img = document.getElementById('graficoPesajes');
-      if (img) {
+// Función para actualizar el gráfico mensual
+function actualizarGraficoMensual() {
+    const img = document.getElementById('graficoMensualProductos');
+    if (img) {
+        // Llamar a la ruta de Flask para obtener el gráfico dinámico y agregar un timestamp para evitar caché
+        img.src = '/grafico/mensual-productos?' + new Date().getTime();
+    } else {
+        console.error("No se encontró el contenedor para el gráfico de total mensual por producto.");
+    }
+}
+
+// Función para actualizar el gráfico de pesajes por hora
+function actualizarGrafico() {
+    const img = document.getElementById('graficoPesajes');
+    if (img) {
         img.src = '/grafico/pesajes?' + new Date().getTime();  // Recargar imagen para evitar caché
-      } else {
+    } else {
         console.error("El gráfico no se encontró en el DOM");
-      }
     }
+}
 
-    function actualizarEstadisticas() {
-      fetch('/api/estadisticas', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
+// Función para actualizar estadísticas de pesajes (total diario y mensual)
+function actualizarEstadisticas() {
+    fetch('/api/estadisticas', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
         .then(response => response.json())
         .then(data => {
-          let totalDiarioHTML = "";
-          if (data.total_diario) {
-            data.total_diario.forEach(item => {
-              totalDiarioHTML += `<p><strong>${item.producto}:</strong> ${item.total_diario} kg</p>`;
-            });
-          }
-          document.getElementById("total-diario").innerHTML = totalDiarioHTML || "No hay datos disponibles";
+            let totalDiarioHTML = "";
+            if (data.total_diario) {
+                data.total_diario.forEach(item => {
+                    totalDiarioHTML += `<p><strong>${item.producto}:</strong> ${item.total_diario} kg</p>`;
+                });
+            }
+            document.getElementById("total-diario").innerHTML = totalDiarioHTML || "No hay datos disponibles";
 
-          let totalMensualHTML = "";
-          if (data.total_mensual) {
-            data.total_mensual.forEach(item => {
-              totalMensualHTML += `<p><strong>${item.producto}:</strong> ${item.total_mensual} kg</p>`;
-            });
-          }
-          document.getElementById("total-mensual").innerHTML = totalMensualHTML || "No hay datos disponibles";
+            let totalMensualHTML = "";
+            if (data.total_mensual) {
+                data.total_mensual.forEach(item => {
+                    totalMensualHTML += `<p><strong>${item.producto}:</strong> ${item.total_mensual} kg</p>`;
+                });
+            }
+            document.getElementById("total-mensual").innerHTML = totalMensualHTML || "No hay datos disponibles";
         })
         .catch(error => console.error('Error al actualizar las estadísticas:', error));
-    }
-
-    document.addEventListener("DOMContentLoaded", function () {
-      // Asegúrate de que los gráficos se carguen cuando la página esté lista
-      inicializarPagina(); // Inicializa la página
-    });
+}
 </script>
 {% endblock %}
+
+

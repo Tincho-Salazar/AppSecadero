@@ -5,42 +5,93 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import matplotlib
 matplotlib.use('Agg')  # Usar un backend que no requiere interfaz gráfica
 import io
-import base64
 import matplotlib.pyplot as plt
+import random
+import threading
 
+# Inicializar la aplicación Flask
 app = Flask(__name__)
 app.secret_key = 'Datiles2044'  # Cambia esto por una clave secreta
+
+# Variables globales de conexión a la base de datos
 mydb = None
 
-# Conexión global a la base de datos
+# Función para conectar a la base de datos MySQL sin pooling
 def connect_to_db():
-    global mydb
     try:
-        if mydb is None or not mydb.is_connected():
-            mydb = mysql.connector.connect(
-                host="192.168.30.216",
-                user="root",
-                password="toor",
-                database="secado"
-            )
+        connection = mysql.connector.connect(
+            host="192.168.30.216",
+            user="root",
+            password="toor",
+            database="secado",  # Asegúrate de que este sea el nombre correcto de la base de datos
+            autocommit=True,
+            connection_timeout=28800  # Timeout de conexión
+        )
+        if connection.is_connected():
             print("Conexión exitosa a la base de datos")
-        return mydb
+        return connection
     except mysql.connector.Error as e:
         print(f"Error al conectar a la base de datos: {e}")
         return None
 
 # Función para ejecutar consultas SQL
-def execute_query(query, params=None, fetchone=False, commit=False):
-    connection = connect_to_db()
+def execute_query(connection, query, params=None, fetchone=False, commit=False):
     try:
-        cursor = connection.cursor(dictionary=True)  # Usamos dictionary=True para que las filas devueltas sean diccionarios
+        if connection is None or not connection.is_connected():
+            print("Error: La conexión es None o no está activa. No se puede ejecutar la consulta.")
+            return None
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(query, params or ())  # Cambiado para usar params como tupla vacía si es None
+        if commit:
+            connection.commit()
+        result = cursor.fetchone() if fetchone else cursor.fetchall()
+        return result
+    except mysql.connector.Error as err:
+        print("Error MySQL:", err)
+        if commit:
+            connection.rollback()
+        return None
+    finally:
+        cursor.close()  # Asegurarse de cerrar el cursor aquí
+
+        
+# Función para reconectar con varios intentos
+def connect_with_retry(retries=5, delay=5):
+    for _ in range(retries):
+        connection = connect_to_db()
+        if connection:
+            return connection
+        print(f"Reintentando conexión en {delay} segundos...")
+        time.sleep(delay)
+    print("No se pudo conectar a la base de datos después de varios intentos.")
+    return None
+
+# Función para mantener la conexión activa (Keep-Alive)
+def keep_connection_alive(connection, interval=60):
+    while True:
+        try:
+            if not connection or not connection.is_connected():
+                print("Conexión perdida. Intentando reconectar...")
+                connection = connect_with_retry()
+            else:
+                connection.ping(reconnect=True, attempts=3, delay=5)
+                print("Conexión verificada y activa.")
+        except mysql.connector.Error as e:
+            print(f"Error en keep-alive: {e}")
+            connection = connect_with_retry()
+        time.sleep(interval)
+
+    try:
+        if connection is None or not connection.is_connected():
+            print("Error: La conexión es None o no está activa. No se puede ejecutar la consulta.")
+            return None
+
+        cursor = connection.cursor(dictionary=True)
         cursor.execute(query, params)
         if commit:
             connection.commit()
-        if fetchone:
-            result = cursor.fetchone()
-        else:
-            result = cursor.fetchall()
+        result = cursor.fetchone() if fetchone else cursor.fetchall()
         cursor.close()
         return result
     except mysql.connector.Error as err:
@@ -49,6 +100,13 @@ def execute_query(query, params=None, fetchone=False, commit=False):
             connection.rollback()
         return None
 
+# Iniciar conexión y keep-alive
+mydb = connect_with_retry()
+if mydb:
+    keep_alive_thread = threading.Thread(target=keep_connection_alive, args=(mydb,))
+    keep_alive_thread.daemon = True
+    keep_alive_thread.start()
+
 # Decorador para verificar si el usuario está autenticado
 def login_required(f):
     def wrap(*args, **kwargs):
@@ -56,7 +114,7 @@ def login_required(f):
             flash("Por favor, inicia sesión primero", "danger")
             return redirect(url_for('login'))
         return f(*args, **kwargs)
-    wrap.__name__ = f.__name__  # Necesario para mantener el nombre de la función original
+    wrap.__name__ = f.__name__
     return wrap
 
 # Decorador para verificar si el usuario es ADMINISTRADOR
@@ -69,7 +127,7 @@ def admin_required(f):
     wrap.__name__ = f.__name__
     return wrap
 
-# Ruta principal para la visualización de datos y gráficos
+# Ruta principal
 @app.route('/')
 @login_required
 def index():
@@ -84,11 +142,11 @@ def login():
         connection = connect_to_db()
 
         query = "SELECT * FROM usuarios WHERE usuario = %s"
-        resultado = execute_query(query, (usuario,), fetchone=True)
+        resultado = execute_query(connection, query, (usuario,), fetchone=True)
 
         if resultado and check_password_hash(resultado['contrasena'], contrasena):
             session['usuario'] = resultado['usuario']
-            session['rol'] = resultado['rol']  # Guardamos el rol en la sesión
+            session['rol'] = resultado['rol']
             return jsonify({'status': 'success', 'redirect': url_for('index')})
         else:
             return jsonify({'status': 'error', 'message': 'Usuario o contraseña incorrectos'})
@@ -102,7 +160,7 @@ def login():
 def gestionar_usuarios():
     connection = connect_to_db()
     query = "SELECT * FROM usuarios"
-    usuarios = execute_query(query)
+    usuarios = execute_query(connection, query)
     return render_template('usuario.html', usuarios=usuarios)
 
 # Ruta para CRUD de productos (solo ADMINISTRADOR)
@@ -112,7 +170,7 @@ def gestionar_usuarios():
 def gestionar_productos():
     connection = connect_to_db()
     query = "SELECT * FROM productos"
-    productos = execute_query(query)
+    productos = execute_query(connection, query)
     return render_template('productos.html', productos=productos)
 
 # Ruta para cerrar sesión
@@ -120,40 +178,39 @@ def gestionar_productos():
 @login_required
 def logout():
     session.pop('usuario', None)
-    session.pop('rol', None)  # También eliminamos el rol de la sesión
+    session.pop('rol', None)
     flash("Has cerrado sesión con éxito", "success")
     return redirect(url_for('login'))
 
-# Ruta para registrar usuarios del sistema 
+# Ruta para registrar usuarios
 @app.route('/admin/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         new_username = request.form['new_usuario']
         new_password = request.form['new_contrasena']
         hashed_password = generate_password_hash(new_password, method='pbkdf2:sha256')
-        
-        connection = connect_to_db()  # Obtener la conexión aquí
+        rol = 'USUARIO'
+
+        connection = connect_to_db()
         if connection is None:
             flash("Error al conectar a la base de datos", "danger")
             return redirect(url_for('register'))
 
-        # Insertar nuevo usuario en la base de datos
-        sql = "INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, 'user')"
-        execute_query(sql, params=(new_username, hashed_password), commit=True)
-        flash('Registro exitoso', 'success')
-        return redirect(url_for('login'))
-    
+        check_user_query = "SELECT COUNT(*) FROM usuarios WHERE usuario = %s"
+        existing_user = execute_query(connection, check_user_query, (new_username,), fetchone=True)
+
+        if existing_user and existing_user['COUNT(*)'] > 0:
+            return jsonify({"message": "nombre de usuario ya está registrado."})
+
+        insert_user_query = "INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, %s)"
+        execute_query(connection, insert_user_query, (new_username, hashed_password, rol), commit=True)
+        
+        return jsonify({"message": "Registro exitoso"}), 200
+
     return render_template('register.html')
 
-# Ruta para obtener datos de usuarios
-@app.route('/admin/usuarios')
-@login_required
-def admin_usuarios():
-    query = "SELECT * FROM usuarios"
-    usuarios = execute_query(query)
-    return render_template('usuario.html', usuarios=usuarios)
-
 # Ruta para la obtención de los datos en tiempo real para actualizar la UI
+# Modificación en la función obtener_datos
 @app.route('/api/datos', methods=['GET'])
 @login_required
 def obtener_datos():
@@ -163,12 +220,12 @@ def obtener_datos():
 
     # Consulta para obtener el producto y pesaje actual
     query_producto_pesaje = """
-        SELECT p.nombre_producto, ps.peso 
+        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS nombre_producto, ps.peso 
         FROM pesajes ps
         JOIN productos p ON ps.producto_id = p.producto_id
         ORDER BY ps.fecha_hora DESC LIMIT 1
     """
-    resultado = execute_query(query_producto_pesaje, fetchone=True)
+    resultado = execute_query(connection, query_producto_pesaje, fetchone=True)  # Llamar correctamente aquí
 
     producto_actual = resultado['nombre_producto'] if resultado else "No disponible"
     pesaje_actual = resultado['peso'] if resultado else 0.0
@@ -180,7 +237,7 @@ def obtener_datos():
         GROUP BY hora
         ORDER BY hora
     """
-    pesajes_por_hora = execute_query(query_pesajes_hora)
+    pesajes_por_hora = execute_query(connection, query_pesajes_hora)  # Llamar correctamente aquí
     horas = [fila['hora'] for fila in pesajes_por_hora] if pesajes_por_hora else []
     pesos_hora = [float(fila['total_peso']) for fila in pesajes_por_hora] if pesajes_por_hora else []
 
@@ -192,7 +249,7 @@ def obtener_datos():
         GROUP BY e.nombre
         ORDER BY bolsas_producidas DESC
     """
-    rendimiento_empleados = execute_query(query_rendimiento_empleado)
+    rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)  # Llamar correctamente aquí
     empleados = [fila['empleado'] for fila in rendimiento_empleados] if rendimiento_empleados else []
     rendimiento = [fila['bolsas_producidas'] for fila in rendimiento_empleados] if rendimiento_empleados else []
 
@@ -206,11 +263,16 @@ def obtener_datos():
         "rendimiento_empleados": rendimiento
     }), 200
 
+
 # Nueva ruta para obtener estadísticas del total diario y mensual por producto
 @app.route('/api/estadisticas', methods=['GET'])
 @login_required
 def obtener_estadisticas():
     connection = connect_to_db()
+
+    # Verifica si la conexión es exitosa
+    if connection is None:
+        return jsonify({"error": "Error en la conexión a la base de datos"}), 500
 
     # Totales diarios por producto
     query_total_diario = """
@@ -220,7 +282,7 @@ def obtener_estadisticas():
         WHERE DATE(ps.fecha_hora) = CURDATE()
         GROUP BY producto
     """
-    total_diario = execute_query(query_total_diario)
+    total_diario = execute_query(connection, query_total_diario)  # Pasar la conexión aquí
 
     # Totales mensuales por producto
     query_total_mensual = """
@@ -230,7 +292,7 @@ def obtener_estadisticas():
         WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
         GROUP BY producto;
     """
-    total_mensual = execute_query(query_total_mensual)
+    total_mensual = execute_query(connection, query_total_mensual)  # Pasar la conexión aquí
  
     return jsonify({
         "total_diario": total_diario,
@@ -248,7 +310,7 @@ def grafico_pesajes():
         GROUP BY hora
         ORDER BY hora
     """
-    pesajes_por_hora = execute_query(query_pesajes_hora)
+    pesajes_por_hora = execute_query(connection,query_pesajes_hora)
     horas = [fila['hora'] for fila in pesajes_por_hora] if pesajes_por_hora else []
     pesos_hora = [float(fila['total_peso']) for fila in pesajes_por_hora] if pesajes_por_hora else []
 
@@ -288,7 +350,7 @@ def grafico_rendimiento():
         GROUP BY e.nombre
         ORDER BY bolsas_producidas DESC
     """
-    rendimiento_empleados = execute_query(query_rendimiento_empleado)
+    rendimiento_empleados = execute_query(connection,query_rendimiento_empleado)
     empleados = [fila['empleado'] for fila in rendimiento_empleados] if rendimiento_empleados else []
     rendimiento = [fila['bolsas_producidas'] for fila in rendimiento_empleados] if rendimiento_empleados else []
 
@@ -323,7 +385,7 @@ def grafico_mensual_productos():
         WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
         GROUP BY producto
     """
-    total_mensual = execute_query(query_total_mensual)
+    total_mensual = execute_query(connection,query_total_mensual)
     productos = [fila['producto'] for fila in total_mensual] if total_mensual else []
     totales = [fila['total_mensual'] for fila in total_mensual] if total_mensual else []
 
@@ -358,9 +420,73 @@ def grafico_mensual_productos():
     except Exception as e:
         print(f"Error al crear o enviar el gráfico: {e}")
         return f"Error al generar el gráfico: {str(e)}", 500
-        
 
+# Rutina para cargar datos aleatorios cada 5 minutos
+pesajes_generados = 2400
+producto_actual = None
+empleado_actual = None
+lote_actual = 1
 
+# Función para cargar datos aleatorios
+def cargar_datos_aleatorios():
+    global pesajes_generados, producto_actual, empleado_actual, lote_actual
 
+    # Intentar reconectar antes de ejecutar cualquier operación de base de datos
+    connection = connect_to_db()  # Cambiado para conectarse cada vez
+    if connection is None:
+        print("Error en la conexión a la base de datos, no se pueden cargar datos.")
+        return
+
+    productos_query = "SELECT producto_id, nombre_producto FROM productos"
+    empleados_query = "SELECT id, nombre FROM empleados"
+    productos = execute_query(connection, productos_query)
+    empleados = execute_query(connection, empleados_query)
+
+    # Verificar si hay productos y empleados en la base de datos
+    if not productos or not empleados:
+        print("No hay productos o empleados cargados en la base de datos.")
+        return
+
+    productos_ids = {prod['producto_id']: prod['nombre_producto'] for prod in productos}
+    empleados_ids = {emp['id']: emp['nombre'] for emp in empleados}
+
+    if producto_actual is None:
+        producto_actual = random.choice(list(productos_ids.keys()))
+    if empleado_actual is None:
+        empleado_actual = random.choice(list(empleados_ids.keys()))
+
+    peso_aleatorio = round(random.uniform(1, 100), 2)
+
+    insert_pesaje_query = """
+        INSERT INTO pesajes (producto_id, peso, lote, empleado_id, fecha_hora)
+        VALUES (%s, %s, %s, %s, NOW())
+    """
+    try:
+        # Insertar los datos aleatorios en la base de datos
+        execute_query(connection, insert_pesaje_query, (producto_actual, peso_aleatorio, lote_actual, empleado_actual), commit=True)
+        pesajes_generados += 1
+
+        # Cambiar de producto y lote cada 250 pesajes
+        if pesajes_generados % 250 == 0:
+            producto_actual = random.choice(list(productos_ids.keys()))
+            empleado_actual = random.choice(list(empleados_ids.keys()))
+            lote_actual += 1
+            print(f"Producto cambiado a {productos_ids[producto_actual]}, nuevo lote: {lote_actual}")
+
+    except mysql.connector.Error as err:
+        print("Error al insertar datos aleatorios:", err)
+
+# Función para iniciar la carga de datos en segundo plano
+def iniciar_carga_datos():
+    while True:
+        cargar_datos_aleatorios()
+        time.sleep(300)  # Pausar por 5 minutos
+
+# Iniciar el hilo en segundo plano
+data_thread = threading.Thread(target=iniciar_carga_datos)
+data_thread.daemon = True  # Hilo en segundo plano que se detiene cuando se cierra la app
+data_thread.start()
+
+# Iniciar la app Flask
 if __name__ == '__main__':
     app.run(debug=True)
