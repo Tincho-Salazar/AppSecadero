@@ -19,6 +19,21 @@
     padding: 20px;
     background-color: #ffffff;
     border-radius: 8px;
+    background-color: #f8f9fa;
+    /* Fondo claro */
+    border-radius: 10px;
+    /* Bordes redondeados */
+    transition: all 0.3s ease;
+    /* Animación suave al pasar el mouse */
+  }
+
+  .card-body:hover {
+    background-color: #e2e6ea;
+    /* Color de fondo al pasar el mouse */
+    transform: scale(1.05);
+    /* Aumentar ligeramente el tamaño */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    /* Sombra más prominente */
   }
 
   /* Estilo para el contenedor del gráfico */
@@ -53,6 +68,25 @@
     color: #333;
   }
 
+  .display-4 {
+    font-size: 2.5rem;
+    /* Tamaño de fuente grande */
+    font-weight: bold;
+    /* Negrita */
+  }
+
+  #pesaje-actual {
+        font-size: 5rem; /* Aumentar el tamaño para "Pesaje Actual" */
+        font-weight: bold; /* Negrita */
+        color: #dc3545; /* Rojo vibrante para resaltar */
+        text-align: center; /* Centrar el texto */        
+    }
+
+    #total-diario {
+      font-size: 12pt;
+      font-family:Arial, Helvetica, sans-serif;
+
+    }
   /* Adaptación para pantallas pequeñas */
   @media (max-width: 768px) {
     .chart-container {
@@ -76,47 +110,73 @@
 
   <!-- Información del producto y pesaje actual -->
   <div class="row my-4">
-    <div class="col-md-4">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5>Producto Actual:</h5>
-          <p id="producto-actual">Cargando...</p>
+    <!-- Columna para Producto Actual y Pesaje Actual -->
+    <div class="col-md-8">
+      <div class="row">
+        <div class="col-md-12 mb-3">
+          <div class="card shadow-sm">
+            <div class="card-body text-center">
+              <h5 class="text-primary">Producto Actual:</h5>
+              <p id="producto-actual" class="display-4 text-success">Cargando...</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-12">
+          <div class="card shadow-sm">
+            <div class="card-body text-center">
+              <h5 class="text-primary">Pesaje Actual:</h5>
+              <p id="pesaje-actual" class="display-4 text-danger">Cargando...</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Columna para Total Diario por Producto -->
     <div class="col-md-4">
       <div class="card shadow-sm">
         <div class="card-body">
-          <h5>Pesaje Actual:</h5>
-          <p id="pesaje-actual">Cargando...</p>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5>Total Diario por Producto</h5>
+          <h5 class=" text-center">Total Diario por Producto</h5>
           <div id="total-diario">Cargando...</div>
         </div>
       </div>
     </div>
   </div>
-
   <!-- Historial de Pesajes Mensual -->
-  <div class="row my-4">
+  <!-- <div class="row my-4">
     <div class="col-md-12">
       <div class="card shadow-sm">
         <div class="card-body">
           <h5>Total Mensual por Producto</h5>
+          <label for="grafico-select">Seleccionar Tipo de Gráfico:</label>
+          <select id="grafico-select" onchange="actualizarGrafico()">
+            <option value="vbar">Gráfico de Barras</option>                     
+            <option value="circle">Gráfico de Círculos</option>
+            <option value="wedge">Gráfico de Analisis</option>
+            <option value="quad">Gráfico de Cuadrantes</option>
+            <option value="varea">Gráfico de Áreas Verticales</option>
+        </select>
           <div class="d-flex justify-content-between">
             <div id="total-mensual" class="p-2" style="flex: 1;">
               Cargando...
             </div>
             <div class="chart-container p-2" style="flex: 2;">
-              <img id="graficoMensualProductos" src="{{ url_for('grafico_mensual_productos') }}"
-                alt="Gráfico de Barras de Total Mensual" style="width: 100%; height: auto;">
+              <div id="bokeh-grafico">
+                <iframe id="graficoMensualProductos" src="/bokeh/mensual-productos?type=bar" style="width: 100%; height: 450px; border: none;"></iframe>
+              </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div> -->
+
+  <div class="row my-4">
+    <div class="col-md-12">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <!-- <h5>Gráfico de Productos</h5> -->
+          <iframe src="/dash/" style="width: 100%; height: 600px; border: none;"></iframe>
         </div>
       </div>
     </div>
@@ -128,8 +188,8 @@
       <div class="card shadow-sm">
         <div class="card-body">
           <h5>Pesajes por Hora</h5>
-          <div class="chart-container">
-            <img id="graficoPesajes" src="{{ url_for('grafico_pesajes') }}" alt="Gráfico de Pesajes">
+          <div id="bokeh-pesajes">
+            <iframe src="/bokeh/pesajes" style="width: 100%; height: 450px; border: none;"></iframe>
           </div>
         </div>
       </div>
@@ -142,97 +202,74 @@
       <div class="card shadow-sm">
         <div class="card-body">
           <h5>Rendimiento por Empleado</h5>
-          <div class="chart-container">
-            <img id="graficoRendimiento" src="{{ url_for('grafico_rendimiento') }}" alt="Gráfico de Rendimiento">
+          <div id="bokeh-rendimiento">
+            <iframe src="/bokeh/rendimiento" style="width: 100%; height: 450px; border: none;"></iframe>
           </div>
         </div>
       </div>
     </div>
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Función para inicializar la página
-document.addEventListener("DOMContentLoaded", function () {
+  // Función para inicializar la página
+  document.addEventListener("DOMContentLoaded", function () {
     // Cargar los datos inicialmente
     actualizarPesajeYProducto();
 
     // Actualizar los datos cada 5 segundos
     setInterval(actualizarPesajeYProducto, 5000);
+  });
 
-    // Cargar el gráfico mensual al iniciar
-    actualizarGraficoMensual();  
-
-    // Actualizar el gráfico de pesajes cada 5 segundos
-    setInterval(actualizarGrafico, 5000);
-});
-
-// Función para actualizar el pesaje actual y el producto actual con AJAX
-function actualizarPesajeYProducto() {
+  // Función para actualizar el pesaje actual y el producto actual con AJAX
+  function actualizarPesajeYProducto() {
     fetch('/api/datos', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
-        .then(response => response.json())
-        .then(data => {
-            // Verificar si los datos se recibieron correctamente
-            if (data) {
-                console.log("Datos recibidos:", data);
-                document.getElementById("producto-actual").innerText = data.producto_actual || "No disponible";
-                document.getElementById("pesaje-actual").innerText = (data.pesaje_actual || 0) + " kg";
-                // Puedes llamar a otras funciones para actualizar estadísticas o gráficos si es necesario
-                actualizarEstadisticas(); // Llama a la función para actualizar estadísticas
-            } else {
-                console.error("Error: Los datos recibidos están vacíos.");
-            }
-        })
-        .catch(error => console.error('Error al actualizar los datos:', error));
-}
+      .then(response => response.json())
+      .then(data => {
+        if (data) {
+          document.getElementById("producto-actual").innerText = data.producto_actual || "No disponible";
+          document.getElementById("pesaje-actual").innerText = (data.pesaje_actual || 0) + " kg";
+          actualizarEstadisticas(); // Llama a la función para actualizar estadísticas
+        } else {
+          console.error("Error: Los datos recibidos están vacíos.");
+        }
+      })
+      .catch(error => console.error('Error al actualizar los datos:', error));
+  }
 
-// Función para actualizar el gráfico mensual
-function actualizarGraficoMensual() {
-    const img = document.getElementById('graficoMensualProductos');
-    if (img) {
-        // Llamar a la ruta de Flask para obtener el gráfico dinámico y agregar un timestamp para evitar caché
-        img.src = '/grafico/mensual-productos?' + new Date().getTime();
-    } else {
-        console.error("No se encontró el contenedor para el gráfico de total mensual por producto.");
-    }
-}
+  // Función para actualizar el gráfico mensual
+  function actualizarGrafico() {
+    const select = document.getElementById('grafico-select');
+    const tipoGrafico = select.value;
+    const iframe = document.getElementById('graficoMensualProductos');
+    iframe.src = `/bokeh/mensual-productos?type=${tipoGrafico}`; // Cambiar la fuente del iframe
+  }
 
-// Función para actualizar el gráfico de pesajes por hora
-function actualizarGrafico() {
-    const img = document.getElementById('graficoPesajes');
-    if (img) {
-        img.src = '/grafico/pesajes?' + new Date().getTime();  // Recargar imagen para evitar caché
-    } else {
-        console.error("El gráfico no se encontró en el DOM");
-    }
-}
-
-// Función para actualizar estadísticas de pesajes (total diario y mensual)
-function actualizarEstadisticas() {
+  // Función para actualizar estadísticas de pesajes (total diario y mensual)
+  function actualizarEstadisticas() {
     fetch('/api/estadisticas', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
-        .then(response => response.json())
-        .then(data => {
-            let totalDiarioHTML = "";
-            if (data.total_diario) {
-                data.total_diario.forEach(item => {
-                    totalDiarioHTML += `<p><strong>${item.producto}:</strong> ${item.total_diario} kg</p>`;
-                });
-            }
-            document.getElementById("total-diario").innerHTML = totalDiarioHTML || "No hay datos disponibles";
+      .then(response => response.json())
+      .then(data => {
+        let totalDiarioHTML = "";
+        if (data.total_diario) {
+          data.total_diario.forEach(item => {
+            totalDiarioHTML += `<p><strong>${item.producto}:</strong> ${item.total_diario} kg</p>`;
+          });
+        }
+        document.getElementById("total-diario").innerHTML = totalDiarioHTML || "No hay datos disponibles";
 
-            let totalMensualHTML = "";
-            if (data.total_mensual) {
-                data.total_mensual.forEach(item => {
-                    totalMensualHTML += `<p><strong>${item.producto}:</strong> ${item.total_mensual} kg</p>`;
-                });
-            }
-            document.getElementById("total-mensual").innerHTML = totalMensualHTML || "No hay datos disponibles";
-        })
-        .catch(error => console.error('Error al actualizar las estadísticas:', error));
-}
+        let totalMensualHTML = "";
+        if (data.total_mensual) {
+          data.total_mensual.forEach(item => {
+            totalMensualHTML += `<p><strong>${item.producto}:</strong> ${item.total_mensual} kg</p>`;
+          });
+        }
+        document.getElementById("total-mensual").innerHTML = totalMensualHTML || "No hay datos disponibles";
+      })
+      .catch(error => console.error('Error al actualizar las estadísticas:', error));
+  }
 </script>
 {% endblock %}
-
-

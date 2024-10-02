@@ -2,16 +2,29 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import mysql.connector
 import time
 from werkzeug.security import generate_password_hash, check_password_hash
-import matplotlib
-matplotlib.use('Agg')  # Usar un backend que no requiere interfaz gráfica
-import io
-import matplotlib.pyplot as plt
 import random
 import threading
+import numpy as np
+from bokeh.plotting import figure
+from bokeh.embed import components
+from bokeh.resources import INLINE
+from bokeh.models import ColumnDataSource
+from bokeh.transform import factor_cmap, cumsum
+from bokeh.palettes import Spectral11, Category20
+import decimal
+from math import pi
+
+import dash
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
+
 
 # Inicializar la aplicación Flask
 app = Flask(__name__)
 app.secret_key = 'Datiles2044'  # Cambia esto por una clave secreta
+
+dash_app = dash.Dash(__name__, server=app, url_base_pathname='/dash/')
 
 # Variables globales de conexión a la base de datos
 mydb = None
@@ -28,8 +41,8 @@ def connect_to_db():
             connection_timeout=28800  # Timeout de conexión
         )
         if connection.is_connected():
-            print("Conexión exitosa a la base de datos")
-        return connection
+            # print("Conexión exitosa a la base de datos")
+            return connection
     except mysql.connector.Error as e:
         print(f"Error al conectar a la base de datos: {e}")
         return None
@@ -76,7 +89,7 @@ def keep_connection_alive(connection, interval=60):
                 connection = connect_with_retry()
             else:
                 connection.ping(reconnect=True, attempts=3, delay=5)
-                print("Conexión verificada y activa.")
+                # print("Conexión verificada y activa.")
         except mysql.connector.Error as e:
             print(f"Error en keep-alive: {e}")
             connection = connect_with_retry()
@@ -225,31 +238,41 @@ def obtener_datos():
         JOIN productos p ON ps.producto_id = p.producto_id
         ORDER BY ps.fecha_hora DESC LIMIT 1
     """
-    resultado = execute_query(connection, query_producto_pesaje, fetchone=True)  # Llamar correctamente aquí
+    resultado = execute_query(connection, query_producto_pesaje, fetchone=True)
 
     producto_actual = resultado['nombre_producto'] if resultado else "No disponible"
     pesaje_actual = resultado['peso'] if resultado else 0.0
 
-    # Consulta para obtener los pesajes por hora
+    # Consulta para obtener los pesajes por cada 1/2 hora
     query_pesajes_hora = """
-        SELECT DATE_FORMAT(ps.fecha_hora, '%H:00') AS hora, SUM(ps.peso) AS total_peso
-        FROM pesajes ps
-        GROUP BY hora
-        ORDER BY hora
+       SELECT DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:%i') AS tiempo, 
+            COUNT(*) AS total_bolsas FROM (
+            SELECT 
+                fecha_hora,
+                CASE
+                    WHEN MINUTE(fecha_hora) < 30 THEN DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:00')
+                    ELSE DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:30')
+                END AS intervalo
+            FROM pesajes
+            WHERE DATE(fecha_hora) = CURDATE()
+        ) AS subquery
+        GROUP BY intervalo
+        ORDER BY intervalo
     """
-    pesajes_por_hora = execute_query(connection, query_pesajes_hora)  # Llamar correctamente aquí
-    horas = [fila['hora'] for fila in pesajes_por_hora] if pesajes_por_hora else []
-    pesos_hora = [float(fila['total_peso']) for fila in pesajes_por_hora] if pesajes_por_hora else []
+    pesajes_por_hora = execute_query(connection, query_pesajes_hora)
+    tiempos = [fila['tiempo'] for fila in pesajes_por_hora] if pesajes_por_hora else []
+    bolsas_hora = [fila['total_bolsas'] for fila in pesajes_por_hora] if pesajes_por_hora else []
 
     # Consulta para obtener el rendimiento por empleado (cantidad de bolsas)
     query_rendimiento_empleado = """
         SELECT e.nombre AS empleado, COUNT(ps.pesaje_id) AS bolsas_producidas
         FROM pesajes ps
         JOIN empleados e ON ps.empleado_id = e.id
+        WHERE DATE(ps.fecha_hora) = CURDATE()
         GROUP BY e.nombre
         ORDER BY bolsas_producidas DESC
     """
-    rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)  # Llamar correctamente aquí
+    rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)
     empleados = [fila['empleado'] for fila in rendimiento_empleados] if rendimiento_empleados else []
     rendimiento = [fila['bolsas_producidas'] for fila in rendimiento_empleados] if rendimiento_empleados else []
 
@@ -257,13 +280,11 @@ def obtener_datos():
     return jsonify({
         "producto_actual": producto_actual,
         "pesaje_actual": pesaje_actual,
-        "horas": horas,
-        "pesajes_por_hora": pesos_hora,
+        "tiempos": tiempos,
+        "bolsas_por_hora": bolsas_hora,
         "empleados": empleados,
         "rendimiento_empleados": rendimiento
     }), 200
-
-
 # Nueva ruta para obtener estadísticas del total diario y mensual por producto
 @app.route('/api/estadisticas', methods=['GET'])
 @login_required
@@ -299,49 +320,38 @@ def obtener_estadisticas():
         "total_mensual": total_mensual,
     })
 
-# Ruta para mostrar el gráfico de pesajes por hora
-@app.route('/grafico/pesajes')
+# Ruta para el gráfico de pesajes usando Bokeh
+@app.route('/bokeh/pesajes')
 @login_required
-def grafico_pesajes():
+def bokeh_pesajes():
     connection = connect_to_db()
     query_pesajes_hora = """
-        SELECT DATE_FORMAT(ps.fecha_hora, '%H:00') AS hora, SUM(ps.peso) AS total_peso
+        SELECT 
+            DATE_FORMAT(ps.fecha_hora, '%H:00') AS hora, 
+            SUM(ps.peso) AS total_peso
         FROM pesajes ps
         GROUP BY hora
         ORDER BY hora
     """
-    pesajes_por_hora = execute_query(connection,query_pesajes_hora)
-    horas = [fila['hora'] for fila in pesajes_por_hora] if pesajes_por_hora else []
-    pesos_hora = [float(fila['total_peso']) for fila in pesajes_por_hora] if pesajes_por_hora else []
+    pesajes_por_hora = execute_query(connection, query_pesajes_hora)
+    horas = [fila['hora'] for fila in pesajes_por_hora]
+    pesos_hora = [float(fila['total_peso']) for fila in pesajes_por_hora]
 
-    try:
-        plt.figure(figsize=(10, 5))
-        plt.plot(horas, pesos_hora, marker='o', color='teal', linestyle='-', linewidth=2, markersize=8, markerfacecolor='orange')
-        plt.title('Pesajes por Hora')
-        plt.xlabel('Hora')
-        plt.ylabel('Pesaje (kg)')
-        plt.grid(True)
+    source = ColumnDataSource(data=dict(horas=horas, pesos_hora=pesos_hora))
+    p = figure(x_range=horas, height=350, title="Pesajes por Hora", toolbar_location=None, tools="")
+    p.vbar(x='horas', top='pesos_hora', width=0.9, source=source, legend_field="horas",
+           line_color='white', fill_color=factor_cmap('horas', palette=Spectral11, factors=horas))
 
-        # Añadir etiquetas a cada punto en la gráfica de línea
-        for i, peso in enumerate(pesos_hora):
-            plt.text(horas[i], peso, f'{peso:.2f}', ha='center', va='bottom', fontsize=10, color='black')
+    p.xgrid.grid_line_color = None
+    p.y_range.start = 0
 
-        # Guardar la figura en un objeto BytesIO
-        img = io.BytesIO()
-        plt.savefig(img, format='png')
-        plt.close()  # Cerrar la figura para liberar memoria
-        img.seek(0)
+    script, div = components(p)
+    return render_template("bokeh_template.html", script=script, div=div, resources=INLINE.render(), titulo="Gráfico Pesajes")
 
-        return send_file(img, mimetype='image/png')
-    except Exception as e:
-        print(f"Error al crear o enviar el gráfico: {e}")
-        return f"Error al generar el gráfico: {str(e)}", 500
-
-
-# Ruta para mostrar el gráfico de rendimiento por empleado
-@app.route('/grafico/rendimiento')
+# Ruta para el gráfico de Rendimiento por Empleado usando Bokeh
+@app.route('/bokeh/rendimiento')
 @login_required
-def grafico_rendimiento():
+def bokeh_rendimiento():
     connection = connect_to_db()
     query_rendimiento_empleado = """
         SELECT e.nombre AS empleado, COUNT(ps.pesaje_id) AS bolsas_producidas
@@ -350,79 +360,119 @@ def grafico_rendimiento():
         GROUP BY e.nombre
         ORDER BY bolsas_producidas DESC
     """
-    rendimiento_empleados = execute_query(connection,query_rendimiento_empleado)
-    empleados = [fila['empleado'] for fila in rendimiento_empleados] if rendimiento_empleados else []
-    rendimiento = [fila['bolsas_producidas'] for fila in rendimiento_empleados] if rendimiento_empleados else []
+    rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)
+    empleados = [fila['empleado'] for fila in rendimiento_empleados]
+    bolsas_producidas = [float(fila['bolsas_producidas']) for fila in rendimiento_empleados]
 
-    # Crear el gráfico usando matplotlib
-    try:
-        plt.figure(figsize=(10, 8))
-        
-        # Crear el gráfico de torta
-        plt.pie(rendimiento, labels=empleados, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired(range(len(empleados))))
-        plt.title('Rendimiento por Empleado (Porcentaje de Bolsas Producidas)')
+    source = ColumnDataSource(data=dict(empleados=empleados, bolsas_producidas=bolsas_producidas))
+    p = figure(x_range=empleados, height=350, title="Rendimiento por Empleado", toolbar_location=None, tools="")
+    p.vbar(x='empleados', top='bolsas_producidas', width=0.9, source=source, legend_field="empleados",
+           line_color='white', fill_color=factor_cmap('empleados', palette=Category20[len(empleados)], factors=empleados))
 
-        # Guardar la figura en un objeto BytesIO
-        img = io.BytesIO()
-        plt.savefig(img, format='png')
-        plt.close()  # Cerrar la figura
-        img.seek(0)
+    p.xgrid.grid_line_color = None
+    p.y_range.start = 0
 
-        return send_file(img, mimetype='image/png')
-    except Exception as e:
-        print(f"Error al crear o enviar el gráfico: {e}")
-        return f"Error al generar el gráfico: {str(e)}", 500
+    script, div = components(p)
+    return render_template("bokeh_template.html", script=script, div=div, resources=INLINE.render(), titulo="Gráfico Rendimiento")
 
-# Ruta para mostrar el gráfico de total mensual por producto en barras
-@app.route('/grafico/mensual-productos')
-@login_required
-def grafico_mensual_productos():
+
+def get_data():
     connection = connect_to_db()
     query_total_mensual = """
-        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual
+        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, CAST(SUM(ps.peso) AS DOUBLE) AS total_mensual
         FROM pesajes ps
         JOIN productos p ON ps.producto_id = p.producto_id
         WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
         GROUP BY producto
     """
-    total_mensual = execute_query(connection,query_total_mensual)
-    productos = [fila['producto'] for fila in total_mensual] if total_mensual else []
-    totales = [fila['total_mensual'] for fila in total_mensual] if total_mensual else []
+    total_mensual = execute_query(connection, query_total_mensual)
 
-    # Crear el gráfico de barras usando matplotlib
-    try:
-        plt.figure(figsize=(12, 6))
+    if not total_mensual:
+        print("No se encontraron datos para el gráfico.")
+        return None
 
-        # Colores atractivos para las barras
-        colores = plt.cm.get_cmap('Set2', len(productos))  # Usar la paleta de colores 'Set2' de Matplotlib
+    # Convertir nombres de productos y valores a tipo adecuado
+    productos = [fila['producto'] for fila in total_mensual]
+    totales = [float(fila['total_mensual']) for fila in total_mensual]
 
-        # Crear el gráfico de barras
-        barras = plt.bar(productos, totales, color=[colores(i) for i in range(len(productos))])
+    return productos, totales
 
-        plt.title('Total Mensual por Producto')
-        plt.xlabel('Productos')
-        plt.ylabel('Total (kg)')
-        plt.xticks(rotation=45)  # Rotar las etiquetas de los productos en el eje X para mejor visualización
-        plt.grid(axis='y')  # Mostrar sólo las líneas horizontales del grid
+# Definir el layout de la aplicación Dash
+dash_app.layout = html.Div([
+    html.H1("Gráfica de Produccion Mensual por Producto"),
+    dcc.Dropdown(
+        id='grafico-selector',
+        options=[
+            {'label': 'Gráfico de Torta', 'value': 'pie'},
+            {'label': 'Barras Verticales', 'value': 'bar'},
+            {'label': 'Barras Horizontal', 'value': 'barh'},
+            {'label': 'Gráfico de linea', 'value': 'linea'},
+            {'label': 'Gráfico de Dispersión', 'value': 'scatter'},
+            {'label': 'Gráfico de Area', 'value': 'area'},
+            {'label': 'Histograma', 'value': 'histo'},
+        ],
+        value='pie',  # Valor predeterminado
+        clearable=False,
+        style={
+            'width': '50%',
+            'margin': 'auto'
+        }
+    ),
+    dcc.Graph(id='grafico'),
+])
 
-        # Añadir etiquetas con los valores sobre cada barra
-        for barra in barras:
-            altura = barra.get_height()
-            plt.text(barra.get_x() + barra.get_width() / 2, altura, f'{altura:.2f} kg', ha='center', va='bottom', fontsize=10, color='black')
+# Callback para actualizar el gráfico
+@dash_app.callback(
+    Output('grafico', 'figure'),
+    Input('grafico-selector', 'value')
+)
 
-        # Guardar la figura en un objeto BytesIO para devolverla como imagen
-        img = io.BytesIO()
-        plt.savefig(img, format='png')
-        plt.close()  # Cerrar la figura para liberar memoria
-        img.seek(0)
+def update_graph(tipo_grafico):
+    productos, totales = get_data()
+    
+    if productos is None:
+        return px.pie(title="No hay datos para mostrar")  # Manejo de errores
 
-        return send_file(img, mimetype='image/png')
-    except Exception as e:
-        print(f"Error al crear o enviar el gráfico: {e}")
-        return f"Error al generar el gráfico: {str(e)}", 500
+    # Crear un DataFrame para facilitar la visualización
+    df = pd.DataFrame({'productos': productos, 'totales': totales})
+
+    # Definir la paleta de colores
+    color_sequence = px.colors.qualitative.Set1  # Puedes cambiar la paleta aquí
+
+    if tipo_grafico == 'pie':
+        # Crear un gráfico de torta
+        fig = px.pie(df, names='productos', values='totales', title='Total Mensual por Producto',
+                     color='productos', color_discrete_sequence=color_sequence)
+    elif tipo_grafico == 'bar':
+        # Crear un gráfico de barras
+        fig = px.bar(df, x='productos', y='totales', title='Total Mensual por Producto',
+                     color='productos', color_discrete_sequence=color_sequence)
+    elif tipo_grafico == 'barh':
+        # Crear un gráfico de barras horizontales
+        fig = px.bar(df, x='totales', y='productos', orientation='h', title='Total Mensual por Producto',
+                     color='productos', color_discrete_sequence=color_sequence)
+    elif tipo_grafico == 'scatter':
+        # Crear un gráfico de dispersión
+        fig = px.scatter(df, x='productos', y='totales', title='Total Mensual por Producto', size='totales',
+                         color='productos', color_discrete_sequence=color_sequence)
+    elif tipo_grafico == 'area':
+        # Crear un gráfico de área
+        fig = px.area(df, x='productos', y='totales', title='Total Mensual por Producto',
+                      color='productos', color_discrete_sequence=color_sequence)
+    elif tipo_grafico == 'histo':
+        # Crear un gráfico de histograma
+        fig = px.histogram(df, x='totales', title='Total Mensual por Producto',
+                           color='productos', color_discrete_sequence=color_sequence)
+    elif tipo_grafico == 'linea':
+        # Crear un gráfico de líneas
+        fig = px.line(df, x='productos', y='totales', title='Total Mensual por Producto',
+                      )
+
+    return fig
+
 
 # Rutina para cargar datos aleatorios cada 5 minutos
-pesajes_generados = 2400
+pesajes_generados = 0
 producto_actual = None
 empleado_actual = None
 lote_actual = 1
@@ -486,6 +536,11 @@ def iniciar_carga_datos():
 data_thread = threading.Thread(target=iniciar_carga_datos)
 data_thread.daemon = True  # Hilo en segundo plano que se detiene cuando se cierra la app
 data_thread.start()
+
+
+
+
+
 
 # Iniciar la app Flask
 if __name__ == '__main__':

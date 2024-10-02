@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gráfico con Bokeh</title>
+    <!-- Incluir los recursos de Bokeh -->
+    {{ resources | safe }}
+    <style>
+        .bk-root .bk-toolbar {
+            display: none; /* Oculta la barra de herramientas de Bokeh si no la necesitas */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="my-4 text-center">{{ titulo }}</h1>
+        <!-- Contenedor del gráfico -->
+        <div id="bokeh-plot">
+            {{ div | safe }}  <!-- Usar "safe" para permitir la ejecución del contenido -->
+        </div>
+        <!-- Script del gráfico -->
+        {{ script | safe }}  <!-- Usar "safe" para permitir la ejecución del contenido -->
+    </div>
+</body>
+</html>
