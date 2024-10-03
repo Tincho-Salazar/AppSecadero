@@ -76,17 +76,22 @@
   }
 
   #pesaje-actual {
-        font-size: 5rem; /* Aumentar el tamaño para "Pesaje Actual" */
-        font-weight: bold; /* Negrita */
-        color: #dc3545; /* Rojo vibrante para resaltar */
-        text-align: center; /* Centrar el texto */        
-    }
+    font-size: 5rem;
+    /* Aumentar el tamaño para "Pesaje Actual" */
+    font-weight: bold;
+    /* Negrita */
+    color: #dc3545;
+    /* Rojo vibrante para resaltar */
+    text-align: center;
+    /* Centrar el texto */
+  }
 
-    #total-diario {
-      font-size: 12pt;
-      font-family:Arial, Helvetica, sans-serif;
+  #total-diario {
+    font-size: 12pt;
+    font-family: Arial, Helvetica, sans-serif;
 
-    }
+  }
+
   /* Adaptación para pantallas pequeñas */
   @media (max-width: 768px) {
     .chart-container {
@@ -142,75 +147,50 @@
       </div>
     </div>
   </div>
-  <!-- Historial de Pesajes Mensual -->
-  <!-- <div class="row my-4">
-    <div class="col-md-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5>Total Mensual por Producto</h5>
-          <label for="grafico-select">Seleccionar Tipo de Gráfico:</label>
-          <select id="grafico-select" onchange="actualizarGrafico()">
-            <option value="vbar">Gráfico de Barras</option>                     
-            <option value="circle">Gráfico de Círculos</option>
-            <option value="wedge">Gráfico de Analisis</option>
-            <option value="quad">Gráfico de Cuadrantes</option>
-            <option value="varea">Gráfico de Áreas Verticales</option>
-        </select>
-          <div class="d-flex justify-content-between">
-            <div id="total-mensual" class="p-2" style="flex: 1;">
-              Cargando...
+
+  {% if 'usuario' in session %}
+    {% if session['rol'] == 'ADMINISTRADOR' %}
+    <div class="row my-4">
+      <div class="col-md-12">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <!-- <h5>Gráfico de Productos</h5> -->
+            <iframe src="/dash/" style="width: 100%; height: 600px; border: none;"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfico del pesaje por hora -->
+    <div class="row my-4">
+      <div class="col-md-12">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5>Pesajes por Hora</h5>
+            <div id="bokeh-pesajes">
+              <iframe src="/bokeh/pesajes" style="width: 100%; height: 450px; border: none;"></iframe>
             </div>
-            <div class="chart-container p-2" style="flex: 2;">
-              <div id="bokeh-grafico">
-                <iframe id="graficoMensualProductos" src="/bokeh/mensual-productos?type=bar" style="width: 100%; height: 450px; border: none;"></iframe>
-              </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gráfico de rendimiento por empleado -->
+    <div class="row my-4">
+      <div class="col-md-12">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <h5>Rendimiento por Empleado</h5>
+            <div id="bokeh-rendimiento">
+              <iframe src="/bokeh/rendimiento" style="width: 100%; height: 450px; border: none;"></iframe>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div> -->
-
-  <div class="row my-4">
-    <div class="col-md-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <!-- <h5>Gráfico de Productos</h5> -->
-          <iframe src="/dash/" style="width: 100%; height: 600px; border: none;"></iframe>
-        </div>
-      </div>
-    </div>
   </div>
-
-  <!-- Gráfico del pesaje por hora -->
-  <div class="row my-4">
-    <div class="col-md-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5>Pesajes por Hora</h5>
-          <div id="bokeh-pesajes">
-            <iframe src="/bokeh/pesajes" style="width: 100%; height: 450px; border: none;"></iframe>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Gráfico de rendimiento por empleado -->
-  <div class="row my-4">
-    <div class="col-md-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5>Rendimiento por Empleado</h5>
-          <div id="bokeh-rendimiento">
-            <iframe src="/bokeh/rendimiento" style="width: 100%; height: 450px; border: none;"></iframe>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
+  {% endif %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

@@ -51,9 +51,7 @@
           {% if session['rol'] == 'ADMINISTRADOR' %}
           <a class="nav-item nav-link" href="/admin/productos">Productos</a>
           <a class="nav-item nav-link" href="/admin/usuarios">Usuarios</a>
-          {% endif %}
-          {% if session['rol'] in ['administrador', 'usuario'] %}
-          <a class="nav-item nav-link" href="/calendario">Calendario</a>
+          <a class="nav-item nav-link" href="/admin/empleados">Empleados</a>
           {% endif %}
           <li class="nav-item dropdown mx-4" style="right: 1rem">
             <div class="text-white mt-2">{{ session['usuario'] }}</div>

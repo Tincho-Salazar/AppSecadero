@@ -172,9 +172,109 @@ def login():
 @admin_required
 def gestionar_usuarios():
     connection = connect_to_db()
+    if not connection:
+        flash("No se pudo conectar a la base de datos", "danger")
+        return render_template('usuario.html', usuarios=[])
+    
     query = "SELECT * FROM usuarios"
     usuarios = execute_query(connection, query)
+    
+    if not usuarios:
+        print("No se encontraron usuarios en la base de datos.")  # Agrega esta línea para verificar
+    else:
+        print("Usuarios encontrados:", usuarios)  # Imprime los usuarios encontrados
+
     return render_template('usuario.html', usuarios=usuarios)
+
+# Eliminacion de usuarios
+@app.route('/eliminar_usuario/<int:id>', methods=['DELETE'])
+def eliminar_usuario(id):
+    sql = 'DELETE FROM usuarios WHERE id = %s'
+    val = (id,)
+    execute_query(mydb, sql, params=val, commit=True)
+
+    return jsonify({'message': 'Usuario eliminado exitosamente'})
+
+@app.route('/crear_usuario', methods=['POST'])
+def crear_usuario():
+    usuario = request.form['usuario']
+    contrasena = request.form['contrasena']
+    rol = request.form['rol']
+
+    hashed_password = generate_password_hash(contrasena, method='pbkdf2:sha256')
+    
+    sql = 'INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, %s)'
+    val = (usuario, hashed_password, rol)
+    execute_query(mydb, sql, params=val, commit=True)
+    
+    return jsonify({'message': 'Usuario creado exitosamente'})
+
+@app.route('/editar_usuario/<int:id>', methods=['POST'])
+def editar_usuario(id):
+    usuario = request.form['usuario']
+    contrasena = request.form['contrasena']
+    rol = request.form['rol']
+
+    hashed_password = generate_password_hash(contrasena, method='pbkdf2:sha256')
+    
+    sql = 'UPDATE usuarios SET usuario = %s, contrasena = %s, rol = %s WHERE id = %s'
+    val = (usuario, hashed_password, rol, id)
+    execute_query(mydb, sql, params=val, commit=True)
+    
+    return jsonify({'message': 'Usuario actualizado exitosamente'})
+
+# Ruta para CRUD de empleados (solo ADMINISTRADOR)
+@app.route('/admin/empleados', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def gestionar_empleados():
+    connection = connect_to_db()
+    if not connection:
+        flash("No se pudo conectar a la base de datos", "danger")
+        return render_template('empleado.html', empleados=[])
+    
+    query = "SELECT * FROM empleados"
+    empleados = execute_query(connection, query)
+    
+    if not empleados:
+        print("No se encontraron empleados en la base de datos.")  # Agrega esta línea para verificar
+    else:
+        print("empleados encontrados:", empleados)  # Imprime los empleados encontrados
+
+    return render_template('empleado.html', empleados=empleados)
+
+# Eliminacion de empleados
+@app.route('/eliminar_empleado/<int:id>', methods=['DELETE'])
+def eliminar_empleado(id):
+    sql = 'DELETE FROM empleados WHERE id = %s'
+    val = (id,)
+    execute_query(mydb, sql, params=val, commit=True)
+
+    return jsonify({'message': 'empleado eliminado exitosamente'})
+
+@app.route('/crear_empleado', methods=['POST'])
+def crear_empleado():
+    nombre = request.form['empleado']  # Cambia 'empleado' por 'nombre'
+    puesto = request.form['rol']       # Cambia 'rol' por 'puesto'
+
+    sql = 'INSERT INTO empleados (nombre, puesto) VALUES (%s, %s)'
+    val = (nombre, puesto)  # Solo usa nombre y puesto, elimina hashed_password
+    execute_query(mydb, sql, params=val, commit=True)
+
+    return jsonify({'message': 'Empleado creado exitosamente'})
+
+@app.route('/editar_empleado/<int:id>', methods=['POST'])
+def editar_empleado(id):
+    nombre = request.form['empleado']  # Cambia 'empleado' por 'nombre'
+    puesto = request.form['rol']       # Cambia 'rol' por 'puesto'
+
+    sql = 'UPDATE empleados SET nombre = %s, puesto = %s WHERE id = %s'
+    val = (nombre, puesto, id)
+    execute_query(mydb, sql, params=val, commit=True)
+
+    return jsonify({'message': 'Empleado actualizado exitosamente'})
+
+
 
 # Ruta para CRUD de productos (solo ADMINISTRADOR)
 @app.route('/admin/productos', methods=['GET', 'POST'])
@@ -182,9 +282,62 @@ def gestionar_usuarios():
 @admin_required
 def gestionar_productos():
     connection = connect_to_db()
+    if not connection:
+        flash("No se pudo conectar a la base de datos", "danger")
+        return render_template('productos.html', productos=[])
+    
     query = "SELECT * FROM productos"
     productos = execute_query(connection, query)
+    
+    if not productos:
+        print("No se encontraron productos en la base de datos.")
+    else:
+        print("Productos encontrados:", productos)
+
     return render_template('productos.html', productos=productos)
+
+# Crear nuevo producto
+@app.route('/crear_producto', methods=['POST'])
+@login_required
+@admin_required
+def crear_producto():
+    nombre = request.form['nombre']
+    calidad = request.form['calidad']
+    descripcion = request.form['descripcion']  # Nuevo campo descripción
+
+    sql = 'INSERT INTO productos (nombre_producto, calidad, descripcion) VALUES (%s, %s, %s)'
+    val = (nombre, calidad, descripcion)
+    execute_query(mydb, sql, params=val, commit=True)
+    
+    return jsonify({'message': 'Producto creado exitosamente'})
+
+# Editar producto existente
+@app.route('/editar_producto/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def editar_producto(id):
+    nombre = request.form['nombre']
+    calidad = request.form['calidad']
+    descripcion = request.form['descripcion']  # Nuevo campo descripción
+
+    sql = 'UPDATE productos SET nombre_producto = %s, calidad = %s, descripcion = %s WHERE producto_id = %s'
+    val = (nombre, calidad, descripcion, id)
+    execute_query(mydb, sql, params=val, commit=True)
+    
+    return jsonify({'message': 'Producto actualizado exitosamente'})
+
+# Eliminar producto
+@app.route('/eliminar_producto/<int:id>', methods=['DELETE'])
+@login_required
+@admin_required
+def eliminar_producto(id):
+    sql = 'DELETE FROM productos WHERE producto_id = %s'
+    val = (id,)
+    execute_query(mydb, sql, params=val, commit=True)
+
+    return jsonify({'message': 'Producto eliminado exitosamente'})
+
+
 
 # Ruta para cerrar sesión
 @app.route('/logout')
