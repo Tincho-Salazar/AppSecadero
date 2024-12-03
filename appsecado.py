@@ -1,6 +1,7 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file, make_response
 import mysql.connector
 import time
+from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
 import threading
@@ -13,6 +14,10 @@ from bokeh.transform import factor_cmap, cumsum
 from bokeh.palettes import Spectral11, Category20
 import decimal
 from math import pi
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import pandas as pd
+from io import BytesIO
 
 import dash
 from dash import dcc, html, Input, Output
@@ -338,6 +343,148 @@ def eliminar_producto(id):
     return jsonify({'message': 'Producto eliminado exitosamente'})
 
 
+@app.route('/admin/reportes', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def reportes():
+    reportes = None
+    connection = connect_to_db()  # Conectar a la base de datos al inicio de la ruta
+    if connection is None:
+        flash("Error al conectar a la base de datos", "danger")
+        return render_template('reportes.html', reportes=[])
+
+    if request.method == 'POST':
+        fecha_inicio = request.form['fecha_inicio']
+        hora_inicio = request.form['hora_inicio']
+        fecha_final = request.form['fecha_final']
+        hora_final = request.form['hora_final']
+
+        # Combinar fecha y hora
+        inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
+        final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
+
+        # Formatear las fechas para la consulta SQL
+        inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
+        final_str = final.strftime('%Y-%m-%d %H:%M:%S')
+
+        query =  """
+            SELECT 
+                DATE(p.fecha_hora) AS fecha,
+                CONCAT(pr.nombre_producto, ' (', pr.calidad, ')') AS producto,
+                SUM(p.peso) AS total_peso,
+                SUM(SUM(p.peso)) OVER () AS total_general
+            FROM 
+                pesajes p
+            JOIN 
+                productos pr ON p.producto_id = pr.producto_id
+            WHERE 
+                p.fecha_hora BETWEEN %s AND %s
+            GROUP BY 
+                DATE(p.fecha_hora), producto
+            ORDER BY 
+                fecha, producto;
+            """
+        
+        # Imprimir la consulta generada
+        print("Consulta SQL:", query)
+        print("Parámetros:", (inicio_str, final_str))
+
+
+        reportes = execute_query(connection, query, (inicio_str, final_str))  # Usar la conexión aquí
+        print(reportes)
+
+    return render_template('reportes.html', resultados=reportes)  # Cambiado a 'resultados'
+
+# Ruta para generar el reporte PDF
+@app.route('/admin/reportes/pdf', methods=['GET'])
+@login_required
+@admin_required
+def reportes_pdf():
+    connection = connect_to_db()
+    if connection is None:
+        flash("Error al conectar a la base de datos", "danger")
+        return redirect('/admin/reportes')
+
+    fecha_inicio = request.args.get('fecha_inicio')
+    hora_inicio = request.args.get('hora_inicio')
+    fecha_final = request.args.get('fecha_final')
+    hora_final = request.args.get('hora_final')
+
+    inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
+    final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
+    inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
+    final_str = final.strftime('%Y-%m-%d %H:%M:%S')
+
+    query = """
+        SELECT 
+            fecha,
+            producto,
+            total_peso,
+            (SELECT SUM(peso) FROM pesajes WHERE fecha_hora BETWEEN %s AND %s) AS total_general
+        FROM (
+            SELECT 
+                DATE(p.fecha_hora) AS fecha,
+                CONCAT(pr.nombre_producto, ' (', pr.calidad, ')') AS producto,
+                SUM(p.peso) AS total_peso
+            FROM 
+                pesajes p
+            JOIN 
+                productos pr ON p.producto_id = pr.producto_id
+            WHERE 
+                p.fecha_hora BETWEEN %s AND %s
+            GROUP BY 
+                DATE(p.fecha_hora), producto
+        ) AS subquery
+        ORDER BY 
+            fecha, producto;
+    """
+
+    reportes = execute_query(connection, query, (inicio_str, final_str, inicio_str, final_str))
+
+    if not reportes:
+        flash("No hay datos para las fechas seleccionadas", "warning")
+        return redirect('/admin/reportes')
+
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    p.setFont("Helvetica", 14)
+    p.drawString(200, height - 40, "Reporte de Pesajes")
+
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 80, "Producto")
+    p.drawString(350, height - 80, "Fecha")
+    p.drawString(500, height - 80, "Total en KG")
+
+    y_position = height - 100
+    for row in reportes:
+        producto = row['producto']
+        fecha = row['fecha'].strftime('%Y-%m-%d')
+        total_peso = str(row['total_peso'])
+
+        p.drawString(50, y_position, producto)
+        p.drawString(350, y_position, fecha)
+        p.drawString(500, y_position, total_peso)
+        y_position -= 20
+
+    total_general = reportes[0]['total_general'] if 'total_general' in reportes[0] else 0
+
+    if y_position < 50:
+        p.showPage()
+        y_position = height - 50
+
+    p.drawString(350, y_position, "TOTAL GENERAL")
+    p.drawString(500, y_position, str(total_general))
+    p.save()
+
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    response = make_response(pdf)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = 'inline; filename=reportes.pdf'
+    return response
 
 # Ruta para cerrar sesión
 @app.route('/logout')
