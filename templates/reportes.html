@@ -29,7 +29,6 @@
         </div>
     </form>
 
-
     <!-- Resultados del reporte -->
     <div id="resultadosReporte" class="mt-5">
         {% if resultados %}
@@ -38,7 +37,9 @@
             <thead class="table-dark">
                 <tr>
                     <th>Producto</th>
-                    <th>Fecha</th>
+                    <th>Primer Pesaje</th>
+                    <th>Último Pesaje</th>
+                    <th>Duración (Horas)</th>
                     <th>Total en KG</th>
                 </tr>
             </thead>
@@ -46,14 +47,16 @@
                 {% for row in resultados %}
                 <tr>
                     <td>{{ row.producto }}</td>
-                    <td>{{ row.fecha }}</td>
-                    <td>{{ row.total_peso}}</td>
+                    <td>{{ row.primer_pesaje }}</td>
+                    <td>{{ row.ultimo_pesaje }}</td>
+                    <td>{{ row.duracion_horas }}</td>
+                    <td>{{ row.total_peso }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot class="table-dark">
                 <tr>
-                    <td colspan="2" class="text-end"><strong>Total General (KG):</strong></td>
+                    <td colspan="4" class="text-end"><strong>Total General (KG):</strong></td>
                     <td><strong>{{ resultados[0].total_general }}</strong></td>
                 </tr>
             </tfoot>

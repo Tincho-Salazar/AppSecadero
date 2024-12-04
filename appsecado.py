@@ -14,7 +14,7 @@ from bokeh.transform import factor_cmap, cumsum
 from bokeh.palettes import Spectral11, Category20
 import decimal
 from math import pi
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter,A4
 from reportlab.pdfgen import canvas
 import pandas as pd
 from io import BytesIO
@@ -23,11 +23,14 @@ import dash
 from dash import dcc, html, Input, Output
 import plotly.express as px
 import pandas as pd
+import os
 
 
 # Inicializar la aplicación Flask
 app = Flask(__name__)
 app.secret_key = 'Datiles2044'  # Cambia esto por una clave secreta
+app._static_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+app._template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 
 dash_app = dash.Dash(__name__, server=app, url_base_pathname='/dash/')
 
@@ -38,11 +41,13 @@ mydb = None
 def connect_to_db():
     try:
         connection = mysql.connector.connect(
-            host="192.168.30.216",
-            user="root",
-            password="toor",
-            database="secado",  # Asegúrate de que este sea el nombre correcto de la base de datos
+            host="192.168.37.114",
+            user="consultaDB",
+            password="cPindo2024",
+            database="bolsas",  # Asegúrate de que este sea el nombre correcto de la base de datos
             autocommit=True,
+            charset="utf8mb4",
+            collation="utf8mb4_general_ci",
             connection_timeout=28800  # Timeout de conexión
         )
         if connection.is_connected():
@@ -343,6 +348,7 @@ def eliminar_producto(id):
     return jsonify({'message': 'Producto eliminado exitosamente'})
 
 
+# Modificaciones para incluir los nuevos datos en el reporte
 @app.route('/admin/reportes', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -367,10 +373,13 @@ def reportes():
         inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
         final_str = final.strftime('%Y-%m-%d %H:%M:%S')
 
-        query =  """
+        query = """
             SELECT 
+                pr.nombre_producto AS producto,
                 DATE(p.fecha_hora) AS fecha,
-                CONCAT(pr.nombre_producto, ' (', pr.calidad, ')') AS producto,
+                MIN(p.fecha_hora) AS primer_pesaje,
+                MAX(p.fecha_hora) AS ultimo_pesaje,
+                TIMESTAMPDIFF(HOUR, MIN(p.fecha_hora), MAX(p.fecha_hora)) AS duracion_horas,
                 SUM(p.peso) AS total_peso,
                 SUM(SUM(p.peso)) OVER () AS total_general
             FROM 
@@ -380,20 +389,16 @@ def reportes():
             WHERE 
                 p.fecha_hora BETWEEN %s AND %s
             GROUP BY 
-                DATE(p.fecha_hora), producto
+                producto, fecha
             ORDER BY 
                 fecha, producto;
-            """
+        """
         
-        # Imprimir la consulta generada
-        print("Consulta SQL:", query)
-        print("Parámetros:", (inicio_str, final_str))
+        # Ejecutar la consulta
+        reportes = execute_query(connection, query, (inicio_str, final_str))
 
+    return render_template('reportes.html', resultados=reportes)
 
-        reportes = execute_query(connection, query, (inicio_str, final_str))  # Usar la conexión aquí
-        print(reportes)
-
-    return render_template('reportes.html', resultados=reportes)  # Cambiado a 'resultados'
 
 # Ruta para generar el reporte PDF
 @app.route('/admin/reportes/pdf', methods=['GET'])
@@ -414,32 +419,31 @@ def reportes_pdf():
     final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
     inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
     final_str = final.strftime('%Y-%m-%d %H:%M:%S')
+    desde=inicio.strftime('%d-%m-%Y')
+    hasta=final.strftime('%d-%m-%Y')
 
     query = """
         SELECT 
-            fecha,
-            producto,
-            total_peso,
-            (SELECT SUM(peso) FROM pesajes WHERE fecha_hora BETWEEN %s AND %s) AS total_general
-        FROM (
-            SELECT 
-                DATE(p.fecha_hora) AS fecha,
-                CONCAT(pr.nombre_producto, ' (', pr.calidad, ')') AS producto,
-                SUM(p.peso) AS total_peso
-            FROM 
-                pesajes p
-            JOIN 
-                productos pr ON p.producto_id = pr.producto_id
-            WHERE 
-                p.fecha_hora BETWEEN %s AND %s
-            GROUP BY 
-                DATE(p.fecha_hora), producto
-        ) AS subquery
+            pr.nombre_producto AS producto,
+            DATE(p.fecha_hora) AS fecha,
+            MIN(p.fecha_hora) AS primer_pesaje,
+            MAX(p.fecha_hora) AS ultimo_pesaje,
+            TIMESTAMPDIFF(HOUR, MIN(p.fecha_hora), MAX(p.fecha_hora)) AS duracion_horas,
+            SUM(p.peso) AS total_peso,
+            SUM(SUM(p.peso)) OVER () AS total_general
+        FROM 
+            pesajes p
+        JOIN 
+            productos pr ON p.producto_id = pr.producto_id
+        WHERE 
+            p.fecha_hora BETWEEN %s AND %s
+        GROUP BY 
+            producto, fecha
         ORDER BY 
             fecha, producto;
     """
 
-    reportes = execute_query(connection, query, (inicio_str, final_str, inicio_str, final_str))
+    reportes = execute_query(connection, query, (inicio_str, final_str))
 
     if not reportes:
         flash("No hay datos para las fechas seleccionadas", "warning")
@@ -447,35 +451,57 @@ def reportes_pdf():
 
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
+    width, height = A4
 
+    # Agregar el logo
+    logo_path = 'static/png/logo.jpg'
+    try:
+        p.drawImage(logo_path, 50, height - 105, width=76, height=50, mask='auto')
+    except Exception as e:
+        print(f"Error al cargar el logo: {e}")
+
+    # Ajustar la posición del título para que no se solape con el logo
     p.setFont("Helvetica", 14)
-    p.drawString(200, height - 40, "Reporte de Pesajes")
+    p.drawString(200, height - 90, f"Reporte de Pesajes ({desde} al {hasta})")
 
+    # Dibujar una línea horizontal
+    p.line(50, height - 110, 600, height - 110)
+
+    # Ajustar la posición de los encabezados de columna
     p.setFont("Helvetica", 10)
-    p.drawString(50, height - 80, "Producto")
-    p.drawString(350, height - 80, "Fecha")
-    p.drawString(500, height - 80, "Total en KG")
+    p.drawString(50, height - 110 - 20, "Producto")
+    p.drawString(200, height -110 - 20, "Primer Pesaje")
+    p.drawString(330, height -110 - 20, "Último Pesaje")
+    p.drawString(450, height -110 - 20, "Duración (Horas)")
+    p.drawString(550, height -110 - 20, "Total en KG")
 
-    y_position = height - 100
+    # Ajustar la posición para los datos
+    y_position = height - 130 - 20  # Ajustamos la posición para que los datos estén después de los encabezados
     for row in reportes:
         producto = row['producto']
-        fecha = row['fecha'].strftime('%Y-%m-%d')
+        primer_pesaje = row['primer_pesaje'].strftime('%H:%M:%S')
+        ultimo_pesaje = row['ultimo_pesaje'].strftime('%H:%M:%S')
+        duracion_horas = str(row['duracion_horas'])
         total_peso = str(row['total_peso'])
 
         p.drawString(50, y_position, producto)
-        p.drawString(350, y_position, fecha)
-        p.drawString(500, y_position, total_peso)
-        y_position -= 20
+        p.drawString(200, y_position, primer_pesaje)
+        p.drawString(330, y_position, ultimo_pesaje)
+        p.drawString(480, y_position, duracion_horas)
+        p.drawString(550, y_position, total_peso)
+        y_position -= 20  # Reducir la posición para la siguiente fila
+
 
     total_general = reportes[0]['total_general'] if 'total_general' in reportes[0] else 0
 
     if y_position < 50:
         p.showPage()
         y_position = height - 50
-
-    p.drawString(350, y_position, "TOTAL GENERAL")
-    p.drawString(500, y_position, str(total_general))
+    # Dibujar una línea horizontal
+    p.line(50, y_position, 600, y_position)
+    y_position -= 20
+    p.drawString(400, y_position, "TOTAL GENERAL (KG)")
+    p.drawString(550, y_position, str(total_general))
     p.save()
 
     pdf = buffer.getvalue()
@@ -663,7 +689,7 @@ def bokeh_rendimiento():
     rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)
     empleados = [fila['empleado'] for fila in rendimiento_empleados]
     bolsas_producidas = [float(fila['bolsas_producidas']) for fila in rendimiento_empleados]
-
+    
     source = ColumnDataSource(data=dict(empleados=empleados, bolsas_producidas=bolsas_producidas))
     p = figure(x_range=empleados, height=350, title="Rendimiento por Empleado", toolbar_location=None, tools="")
     p.vbar(x='empleados', top='bolsas_producidas', width=0.9, source=source, legend_field="empleados",
@@ -829,13 +855,13 @@ def cargar_datos_aleatorios():
 # Función para iniciar la carga de datos en segundo plano
 def iniciar_carga_datos():
     while True:
-        cargar_datos_aleatorios()
+        # cargar_datos_aleatorios() appsecado.py
         time.sleep(300)  # Pausar por 5 minutos
 
 # Iniciar el hilo en segundo plano
-data_thread = threading.Thread(target=iniciar_carga_datos)
-data_thread.daemon = True  # Hilo en segundo plano que se detiene cuando se cierra la app
-data_thread.start()
+# data_thread = threading.Thread(target=iniciar_carga_datos)
+# data_thread.daemon = True  # Hilo en segundo plano que se detiene cuando se cierra la app
+# data_thread.start()
 
 
 
