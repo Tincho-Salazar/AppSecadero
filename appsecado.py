@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file, make_response
 import mysql.connector
+import pyodbc
 import time
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
 import threading
@@ -36,6 +37,70 @@ dash_app = dash.Dash(__name__, server=app, url_base_pathname='/dash/')
 
 # Variables globales de conexión a la base de datos
 mydb = None
+
+
+def connect_to_sql_server():
+    db_config = {
+        'server': '192.168.30.5\\prd',
+        'database': 'SAPINFO',
+        'username': 'laichi',
+        'password': 'datiles2044pera%%%'
+    }
+
+    conn_str = (
+        f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+        f"SERVER={db_config['server']};"
+        f"DATABASE={db_config['database']};"
+        f"UID={db_config['username']};"
+        f"PWD={db_config['password']};"
+        "Encrypt=yes;"
+        "TrustServerCertificate=yes;"
+    )
+
+    return pyodbc.connect(conn_str)
+#Lectura de los datos de Yerba entrada desde Sql Server
+def get_peso_total_hoja_verde():
+    try:
+        conn = connect_to_sql_server()
+        cursor = conn.cursor()
+
+        # Consulta diaria para "Hoja Verde"
+        query_hoja_verde_diario = """
+            SELECT SUM(pesoneto - pesotara) AS total_hoja_verde_diario
+            FROM ZTPESAJES
+            WHERE CONVERT(DATE, LEFT(Fechaentrada, 8), 112) = CONVERT(DATE, GETDATE(), 112)
+        """
+        cursor.execute(query_hoja_verde_diario)
+        hoja_verde_diario_result = cursor.fetchone()
+        hoja_verde_diario = hoja_verde_diario_result[0] if hoja_verde_diario_result and hoja_verde_diario_result[0] else 0
+
+        # Consulta mensual para "Hoja Verde"
+        query_hoja_verde_mensual = """
+            SELECT SUM(pesoneto - pesotara) AS total_hoja_verde_mensual
+            FROM ZTPESAJES
+            WHERE MONTH(CONVERT(DATE, LEFT(Fechaentrada, 8), 112)) = MONTH(GETDATE())
+              AND YEAR(CONVERT(DATE, LEFT(Fechaentrada, 8), 112)) = YEAR(GETDATE())
+        """
+        cursor.execute(query_hoja_verde_mensual)
+        hoja_verde_mensual_result = cursor.fetchone()
+        hoja_verde_mensual = hoja_verde_mensual_result[0] if hoja_verde_mensual_result and hoja_verde_mensual_result[0] else 0
+
+        return {
+            "total_hoja_verde_diario": hoja_verde_diario,
+            "total_hoja_verde_mensual": hoja_verde_mensual
+        }
+
+    except Exception as e:
+        print(f"Error al obtener los datos de Hoja Verde: {e}")
+        return {
+            "total_hoja_verde_diario": 0,
+            "total_hoja_verde_mensual": 0
+        }
+    finally:
+        conn.close()
+
+
+
 
 # Función para conectar a la base de datos MySQL sin pooling
 def connect_to_db():
@@ -374,26 +439,52 @@ def reportes():
         final_str = final.strftime('%Y-%m-%d %H:%M:%S')
 
         query = """
+        WITH intervalos AS (
             SELECT 
+                p.producto_id,
                 pr.nombre_producto AS producto,
                 DATE(p.fecha_hora) AS fecha,
-                MIN(p.fecha_hora) AS primer_pesaje,
-                MAX(p.fecha_hora) AS ultimo_pesaje,
-                TIMESTAMPDIFF(HOUR, MIN(p.fecha_hora), MAX(p.fecha_hora)) AS duracion_horas,
-                SUM(p.peso) AS total_peso,
-                SUM(SUM(p.peso)) OVER () AS total_general
+                MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
+                MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
+                SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
+                TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
+                            LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
             FROM 
                 pesajes p
             JOIN 
                 productos pr ON p.producto_id = pr.producto_id
             WHERE 
                 p.fecha_hora BETWEEN %s AND %s
-            GROUP BY 
-                producto, fecha
-            ORDER BY 
-                fecha, producto;
+        )
+        SELECT 
+            fecha,
+            producto,
+            MIN(primer_pesaje) AS primer_pesaje,
+            MAX(ultimo_pesaje) AS ultimo_pesaje,
+            TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
+            ROUND(
+                SUM(
+                    CASE 
+                        WHEN intervalo_minutos >= 30 THEN 
+                            CASE 
+                                WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
+                                ELSE FLOOR(intervalo_minutos / 30) * 0.5 
+                            END
+                        ELSE 0 
+                    END
+                ), 1) AS tiempo_muerto_horas,
+            MAX(total_peso) AS total_peso_kg,
+            SUM(MAX(total_peso)) OVER () AS total_general,
+            COUNT(*) AS cantidad_pesajes  -- Nueva columna
+        FROM 
+            intervalos
+        WHERE 
+            intervalo_minutos IS NOT NULL
+        GROUP BY 
+            fecha, producto
+        ORDER BY 
+            fecha, producto;
         """
-        
         # Ejecutar la consulta
         reportes = execute_query(connection, query, (inicio_str, final_str))
 
@@ -419,26 +510,53 @@ def reportes_pdf():
     final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
     inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
     final_str = final.strftime('%Y-%m-%d %H:%M:%S')
-    desde=inicio.strftime('%d-%m-%Y')
-    hasta=final.strftime('%d-%m-%Y')
+    desde = inicio.strftime('%d-%m-%Y')
+    hasta = final.strftime('%d-%m-%Y')
 
     query = """
+        WITH intervalos AS (
+            SELECT 
+                p.producto_id,
+                pr.nombre_producto AS producto,
+                DATE(p.fecha_hora) AS fecha,
+                MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
+                MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
+                SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
+                TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
+                            LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
+            FROM 
+                pesajes p
+            JOIN 
+                productos pr ON p.producto_id = pr.producto_id
+            WHERE 
+                p.fecha_hora BETWEEN %s AND %s
+        )
         SELECT 
-            pr.nombre_producto AS producto,
-            DATE(p.fecha_hora) AS fecha,
-            MIN(p.fecha_hora) AS primer_pesaje,
-            MAX(p.fecha_hora) AS ultimo_pesaje,
-            TIMESTAMPDIFF(HOUR, MIN(p.fecha_hora), MAX(p.fecha_hora)) AS duracion_horas,
-            SUM(p.peso) AS total_peso,
-            SUM(SUM(p.peso)) OVER () AS total_general
+            fecha,
+            producto,
+            MIN(primer_pesaje) AS primer_pesaje,
+            MAX(ultimo_pesaje) AS ultimo_pesaje,
+            TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
+            ROUND(
+                SUM(
+                    CASE 
+                        WHEN intervalo_minutos >= 30 THEN 
+                            CASE 
+                                WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
+                                ELSE FLOOR(intervalo_minutos / 30) * 0.5 
+                            END
+                        ELSE 0 
+                    END
+                ), 1) AS tiempo_muerto_horas,
+            MAX(total_peso) AS total_peso_kg,
+            SUM(MAX(total_peso)) OVER () AS total_general,
+            COUNT(*) AS cantidad_pesajes  -- Nueva columna
         FROM 
-            pesajes p
-        JOIN 
-            productos pr ON p.producto_id = pr.producto_id
+            intervalos
         WHERE 
-            p.fecha_hora BETWEEN %s AND %s
+            intervalo_minutos IS NOT NULL
         GROUP BY 
-            producto, fecha
+            fecha, producto
         ORDER BY 
             fecha, producto;
     """
@@ -450,60 +568,63 @@ def reportes_pdf():
         return redirect('/admin/reportes')
 
     buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
+    p = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
     # Agregar el logo
     logo_path = 'static/png/logo.jpg'
     try:
-        p.drawImage(logo_path, 50, height - 105, width=76, height=50, mask='auto')
+        p.drawImage(logo_path, 20, height - 65, width=76, height=50, mask='auto')
     except Exception as e:
         print(f"Error al cargar el logo: {e}")
 
-    # Ajustar la posición del título para que no se solape con el logo
+    # Título del reporte
     p.setFont("Helvetica", 14)
-    p.drawString(200, height - 90, f"Reporte de Pesajes ({desde} al {hasta})")
+    p.drawString(100, height - 90, f"Reporte de Pesajes ({desde} al {hasta})")
+    p.line(20, height - 110, 580, height - 110)
 
-    # Dibujar una línea horizontal
-    p.line(50, height - 110, 600, height - 110)
-
-    # Ajustar la posición de los encabezados de columna
+    # Encabezados
     p.setFont("Helvetica", 10)
-    p.drawString(50, height - 110 - 20, "Producto")
-    p.drawString(200, height -110 - 20, "Primer Pesaje")
-    p.drawString(330, height -110 - 20, "Último Pesaje")
-    p.drawString(450, height -110 - 20, "Duración (Horas)")
-    p.drawString(550, height -110 - 20, "Total en KG")
+    p.drawString(20, height - 130, "Producto")
+    p.drawString(170, height - 130, "Primer Pesaje")
+    p.drawString(250, height - 130, "Último Pesaje")
+    p.drawString(320, height - 130, "Bolsas")
+    p.drawString(370, height - 130, "Duración (Hs)")
+    p.drawString(440, height - 130, "Tiempo Muerto (Hs)")
+    p.drawString(530, height - 130, "Total KG")
 
-    # Ajustar la posición para los datos
-    y_position = height - 130 - 20  # Ajustamos la posición para que los datos estén después de los encabezados
+    # Datos
+    y_position = height - 150
     for row in reportes:
         producto = row['producto']
         primer_pesaje = row['primer_pesaje'].strftime('%H:%M:%S')
         ultimo_pesaje = row['ultimo_pesaje'].strftime('%H:%M:%S')
-        duracion_horas = str(row['duracion_horas'])
-        total_peso = str(row['total_peso'])
+        bolsa_pesaje = str(row['cantidad_pesajes'])
+        horas_totales = str(row['horas_totales'])
+        tiempo_muerto_horas = str(row['tiempo_muerto_horas'])
+        total_peso_kg = str(row['total_peso_kg'])
 
-        p.drawString(50, y_position, producto)
-        p.drawString(200, y_position, primer_pesaje)
-        p.drawString(330, y_position, ultimo_pesaje)
-        p.drawString(480, y_position, duracion_horas)
-        p.drawString(550, y_position, total_peso)
-        y_position -= 20  # Reducir la posición para la siguiente fila
+        p.drawString(20, y_position, producto)
+        p.drawString(170, y_position, primer_pesaje)
+        p.drawString(250, y_position, ultimo_pesaje)
+        p.drawString(320, y_position, bolsa_pesaje)
+        p.drawString(370, y_position, horas_totales)
+        p.drawString(440, y_position, tiempo_muerto_horas)
+        p.drawString(530, y_position, total_peso_kg)
+        y_position -= 20
 
+        if y_position < 50:
+            p.showPage()
+            y_position = height - 50
 
+    # Total General
     total_general = reportes[0]['total_general'] if 'total_general' in reportes[0] else 0
-
-    if y_position < 50:
-        p.showPage()
-        y_position = height - 50
-    # Dibujar una línea horizontal
-    p.line(50, y_position, 600, y_position)
+    p.line(20, y_position, 580, y_position)
     y_position -= 20
-    p.drawString(400, y_position, "TOTAL GENERAL (KG)")
-    p.drawString(550, y_position, str(total_general))
-    p.save()
+    p.drawString(420, y_position, "TOTAL GENERAL (KG)")
+    p.drawString(530, y_position, str(total_general))
 
+    p.save()
     pdf = buffer.getvalue()
     buffer.close()
 
@@ -559,19 +680,29 @@ def obtener_datos():
 
     # Consulta para obtener el producto y pesaje actual
     query_producto_pesaje = """
-        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS nombre_producto, ps.peso 
-        FROM pesajes ps
-        JOIN productos p ON ps.producto_id = p.producto_id
-        ORDER BY ps.fecha_hora DESC LIMIT 1
+        SELECT 
+            CONCAT(p.nombre_producto, ' ', p.calidad) AS nombre_producto, 
+            ps.peso, 
+            ps.lote, 
+            ps.pesaje_id
+        FROM 
+            pesajes ps
+        JOIN 
+            productos p ON ps.producto_id = p.producto_id
+        ORDER BY 
+            ps.fecha_hora DESC
+        LIMIT 1;
     """
     resultado = execute_query(connection, query_producto_pesaje, fetchone=True)
 
     producto_actual = resultado['nombre_producto'] if resultado else "No disponible"
     pesaje_actual = resultado['peso'] if resultado else 0.0
+    lote_actual = resultado['lote'] if resultado else "No disponible"
+    pesaje_id = resultado['pesaje_id'] if resultado else "No disponible"
 
     # Consulta para obtener los pesajes por cada 1/2 hora
     query_pesajes_hora = """
-       SELECT DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:%i') AS tiempo, 
+        SELECT DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:%i') AS tiempo, 
             COUNT(*) AS total_bolsas FROM (
             SELECT 
                 fecha_hora,
@@ -606,22 +737,29 @@ def obtener_datos():
     return jsonify({
         "producto_actual": producto_actual,
         "pesaje_actual": pesaje_actual,
+        "lote_actual": lote_actual,
+        "pesaje_id": pesaje_id,
         "tiempos": tiempos,
         "bolsas_por_hora": bolsas_hora,
         "empleados": empleados,
         "rendimiento_empleados": rendimiento
     }), 200
+
+
+
 # Nueva ruta para obtener estadísticas del total diario y mensual por producto
 @app.route('/api/estadisticas', methods=['GET'])
 @login_required
 def obtener_estadisticas():
+    # Obtener datos de SQL Server para "Hoja Verde"
+    hoja_verde_data = get_peso_total_hoja_verde()
+
+    # Obtener datos de MySQL para totales generales
     connection = connect_to_db()
-
-    # Verifica si la conexión es exitosa
     if connection is None:
-        return jsonify({"error": "Error en la conexión a la base de datos"}), 500
+        return jsonify({"error": "Error en la conexión a la base de datos MySQL"}), 500
 
-    # Totales diarios por producto
+    # Consulta diaria de MySQL
     query_total_diario = """
         SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_diario
         FROM pesajes ps
@@ -629,21 +767,24 @@ def obtener_estadisticas():
         WHERE DATE(ps.fecha_hora) = CURDATE()
         GROUP BY producto
     """
-    total_diario = execute_query(connection, query_total_diario)  # Pasar la conexión aquí
+    total_diario = execute_query(connection, query_total_diario)
 
-    # Totales mensuales por producto
+    # Consulta mensual de MySQL
     query_total_mensual = """
         SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual
         FROM pesajes ps
         JOIN productos p ON ps.producto_id = p.producto_id
         WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
-        GROUP BY producto;
+        GROUP BY producto
     """
-    total_mensual = execute_query(connection, query_total_mensual)  # Pasar la conexión aquí
- 
+    total_mensual = execute_query(connection, query_total_mensual)
+
+    # Retornar resultados combinados
     return jsonify({
         "total_diario": total_diario,
         "total_mensual": total_mensual,
+        "total_hoja_verde_diario": hoja_verde_data["total_hoja_verde_diario"],
+        "total_hoja_verde_mensual": hoja_verde_data["total_hoja_verde_mensual"]
     })
 
 # Ruta para el gráfico de pesajes usando Bokeh

@@ -39,8 +39,10 @@
                     <th>Producto</th>
                     <th>Primer Pesaje</th>
                     <th>Último Pesaje</th>
+                    <th>Bolsas</th>
                     <th>Duración (Horas)</th>
-                    <th>Total en KG</th>
+                    <th>Tiempo Muerto (Horas)</th>
+                    <th>Total en KG</th>                    
                 </tr>
             </thead>
             <tbody>
@@ -49,14 +51,16 @@
                     <td>{{ row.producto }}</td>
                     <td>{{ row.primer_pesaje }}</td>
                     <td>{{ row.ultimo_pesaje }}</td>
-                    <td>{{ row.duracion_horas }}</td>
-                    <td>{{ row.total_peso }}</td>
+                    <td>{{ row.cantidad_pesajes }}</td>
+                    <td>{{ row.horas_totales }}</td>
+                    <td>{{ row.tiempo_muerto_horas }}</td>
+                    <td>{{ row.total_peso_kg }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot class="table-dark">
                 <tr>
-                    <td colspan="4" class="text-end"><strong>Total General (KG):</strong></td>
+                    <td colspan="6" class="text-end"><strong>Total General (KG):</strong></td>
                     <td><strong>{{ resultados[0].total_general }}</strong></td>
                 </tr>
             </tfoot>
@@ -72,5 +76,6 @@
         <h4 class="text-center">No se encontraron resultados para las fechas seleccionadas.</h4>
         {% endif %}
     </div>
+
 </div>
 {% endblock %}
