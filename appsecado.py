@@ -19,6 +19,7 @@ from reportlab.lib.pagesizes import letter,A4
 from reportlab.pdfgen import canvas
 import pandas as pd
 from io import BytesIO
+from collections import defaultdict
 
 import dash
 from dash import dcc, html, Input, Output
@@ -418,77 +419,103 @@ def eliminar_producto(id):
 @login_required
 @admin_required
 def reportes():
-    reportes = None
-    connection = connect_to_db()  # Conectar a la base de datos al inicio de la ruta
+    connection = connect_to_db()
     if connection is None:
         flash("Error al conectar a la base de datos", "danger")
-        return render_template('reportes.html', reportes=[])
+        return render_template('reportes.html', resultados=[])
 
     if request.method == 'POST':
-        fecha_inicio = request.form['fecha_inicio']
-        hora_inicio = request.form['hora_inicio']
-        fecha_final = request.form['fecha_final']
-        hora_final = request.form['hora_final']
+        try:
+            data = request.get_json()
 
-        # Combinar fecha y hora
-        inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
-        final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
+            if not data:
+                return jsonify({"error": "No se recibieron datos"}), 400
 
-        # Formatear las fechas para la consulta SQL
-        inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
-        final_str = final.strftime('%Y-%m-%d %H:%M:%S')
+            fecha_inicio = data.get('fecha_inicio')
+            hora_inicio = data.get('hora_inicio')
+            fecha_final = data.get('fecha_final')
+            hora_final = data.get('hora_final')
 
-        query = """
-        WITH intervalos AS (
+            if not fecha_inicio or not fecha_final or not hora_inicio or not hora_final:
+                return jsonify({"error": "Faltan parámetros"}), 400
+
+            inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
+            final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
+
+            inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
+            final_str = final.strftime('%Y-%m-%d %H:%M:%S')
+
+            query = """
+            WITH intervalos AS (
+                SELECT 
+                    p.producto_id,
+                    pr.nombre_producto AS producto,
+                    DATE(p.fecha_hora) AS fecha,
+                    MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
+                    MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
+                    SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
+                    TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
+                                LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
+                FROM 
+                    pesajes p
+                JOIN 
+                    productos pr ON p.producto_id = pr.producto_id
+                WHERE 
+                    p.fecha_hora BETWEEN %s AND %s
+            )
             SELECT 
-                p.producto_id,
-                pr.nombre_producto AS producto,
-                DATE(p.fecha_hora) AS fecha,
-                MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
-                MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
-                SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
-                TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
-                            LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
+                fecha,
+                producto,
+                MIN(primer_pesaje) AS primer_pesaje,
+                MAX(ultimo_pesaje) AS ultimo_pesaje,
+                TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
+                ROUND(
+                    SUM(
+                        CASE 
+                            WHEN intervalo_minutos >= 30 THEN 
+                                CASE 
+                                    WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
+                                    ELSE FLOOR(intervalo_minutos / 30) * 0.5 
+                                END
+                            ELSE 0 
+                        END
+                    ), 1) AS tiempo_muerto_horas,
+                MAX(total_peso) AS total_peso_kg,
+                SUM(MAX(total_peso)) OVER () AS total_general,
+                COUNT(*) AS cantidad_pesajes
             FROM 
-                pesajes p
-            JOIN 
-                productos pr ON p.producto_id = pr.producto_id
+                intervalos
             WHERE 
-                p.fecha_hora BETWEEN %s AND %s
-        )
-        SELECT 
-            fecha,
-            producto,
-            MIN(primer_pesaje) AS primer_pesaje,
-            MAX(ultimo_pesaje) AS ultimo_pesaje,
-            TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
-            ROUND(
-                SUM(
-                    CASE 
-                        WHEN intervalo_minutos >= 30 THEN 
-                            CASE 
-                                WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
-                                ELSE FLOOR(intervalo_minutos / 30) * 0.5 
-                            END
-                        ELSE 0 
-                    END
-                ), 1) AS tiempo_muerto_horas,
-            MAX(total_peso) AS total_peso_kg,
-            SUM(MAX(total_peso)) OVER () AS total_general,
-            COUNT(*) AS cantidad_pesajes  -- Nueva columna
-        FROM 
-            intervalos
-        WHERE 
-            intervalo_minutos IS NOT NULL
-        GROUP BY 
-            fecha, producto
-        ORDER BY 
-            fecha, producto;
-        """
-        # Ejecutar la consulta
-        reportes = execute_query(connection, query, (inicio_str, final_str))
+                intervalo_minutos IS NOT NULL
+            GROUP BY 
+                fecha, producto
+            ORDER BY 
+                fecha, producto;
+            """
 
-    return render_template('reportes.html', resultados=reportes)
+            reportes = execute_query(connection, query, (inicio_str, final_str))
+
+            resultados_json = []
+            for row in reportes:
+                
+                resultados_json.append({
+                    "producto": row['producto'],
+                    "primer_pesaje": row['primer_pesaje'].strftime("%d-%m-%Y %H:%M:%S") ,
+                    "ultimo_pesaje": row['ultimo_pesaje'].strftime("%d-%m-%Y %H:%M:%S") ,
+                    "cantidad_pesajes": row['cantidad_pesajes'],
+                    "horas_totales": row['horas_totales'],
+                    "tiempo_muerto_horas": row['tiempo_muerto_horas'],
+                    "total_peso_kg": row['total_peso_kg'],
+                    "total_general": row['total_general']
+                })
+
+            return jsonify({"resultados": resultados_json})
+
+        except Exception as e:
+            return jsonify({"error": f"Error interno: {str(e)}"}), 500
+
+    return render_template('reportes.html', resultados=[])
+
 
 
 # Ruta para generar el reporte PDF
@@ -505,133 +532,188 @@ def reportes_pdf():
     hora_inicio = request.args.get('hora_inicio')
     fecha_final = request.args.get('fecha_final')
     hora_final = request.args.get('hora_final')
-
-    inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
-    final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
-    inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
-    final_str = final.strftime('%Y-%m-%d %H:%M:%S')
-    desde = inicio.strftime('%d-%m-%Y')
-    hasta = final.strftime('%d-%m-%Y')
-
-    query = """
-        WITH intervalos AS (
-            SELECT 
-                p.producto_id,
-                pr.nombre_producto AS producto,
-                DATE(p.fecha_hora) AS fecha,
-                MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
-                MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
-                SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
-                TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
-                            LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
-            FROM 
-                pesajes p
-            JOIN 
-                productos pr ON p.producto_id = pr.producto_id
-            WHERE 
-                p.fecha_hora BETWEEN %s AND %s
-        )
-        SELECT 
-            fecha,
-            producto,
-            MIN(primer_pesaje) AS primer_pesaje,
-            MAX(ultimo_pesaje) AS ultimo_pesaje,
-            TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
-            ROUND(
-                SUM(
-                    CASE 
-                        WHEN intervalo_minutos >= 30 THEN 
-                            CASE 
-                                WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
-                                ELSE FLOOR(intervalo_minutos / 30) * 0.5 
-                            END
-                        ELSE 0 
-                    END
-                ), 1) AS tiempo_muerto_horas,
-            MAX(total_peso) AS total_peso_kg,
-            SUM(MAX(total_peso)) OVER () AS total_general,
-            COUNT(*) AS cantidad_pesajes  -- Nueva columna
-        FROM 
-            intervalos
-        WHERE 
-            intervalo_minutos IS NOT NULL
-        GROUP BY 
-            fecha, producto
-        ORDER BY 
-            fecha, producto;
-    """
-
-    reportes = execute_query(connection, query, (inicio_str, final_str))
-
-    if not reportes:
-        flash("No hay datos para las fechas seleccionadas", "warning")
+    print(fecha_inicio)
+    print(fecha_final)
+    
+    # Validar que los parámetros no están vacíos
+    if not fecha_inicio or not hora_inicio or not fecha_final or not hora_final:
+        flash("Los parámetros de fecha y hora son requeridos", "warning")
         return redirect('/admin/reportes')
-
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-
-    # Agregar el logo
-    logo_path = 'static/png/logo.jpg'
+    
     try:
-        p.drawImage(logo_path, 20, height - 65, width=76, height=50, mask='auto')
-    except Exception as e:
-        print(f"Error al cargar el logo: {e}")
+        inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
+        final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
+        inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
+        final_str = final.strftime('%Y-%m-%d %H:%M:%S')
+        desde = inicio.strftime('%d-%m-%Y')
+        hasta = final.strftime('%d-%m-%Y')
+        
+        query = """
+            WITH intervalos AS (
+                SELECT 
+                    p.producto_id,
+                    pr.nombre_producto AS producto,
+                    DATE(p.fecha_hora) AS fecha,
+                    MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
+                    MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
+                    SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
+                    TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
+                                LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
+                FROM 
+                    pesajes p
+                JOIN 
+                    productos pr ON p.producto_id = pr.producto_id
+                WHERE 
+                    p.fecha_hora BETWEEN %s AND %s
+            )
+            SELECT 
+                fecha,
+                producto,
+                MIN(primer_pesaje) AS primer_pesaje,
+                MAX(ultimo_pesaje) AS ultimo_pesaje,
+                TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
+                ROUND(
+                    SUM(
+                        CASE 
+                            WHEN intervalo_minutos >= 30 THEN 
+                                CASE 
+                                    WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
+                                    ELSE FLOOR(intervalo_minutos / 30) * 0.5 
+                                END
+                            ELSE 0 
+                        END
+                    ), 1) AS tiempo_muerto_horas,
+                MAX(total_peso) AS total_peso_kg,
+                SUM(MAX(total_peso)) OVER () AS total_general,
+                COUNT(*) AS cantidad_pesajes  -- Nueva columna
+            FROM 
+                intervalos
+            WHERE 
+                intervalo_minutos IS NOT NULL
+            GROUP BY 
+                fecha, producto
+            ORDER BY 
+                fecha, producto;
+        """
 
-    # Título del reporte
-    p.setFont("Helvetica", 14)
-    p.drawString(100, height - 90, f"Reporte de Pesajes ({desde} al {hasta})")
-    p.line(20, height - 110, 580, height - 110)
+        reportes = execute_query(connection, query, (inicio_str, final_str))
 
-    # Encabezados
-    p.setFont("Helvetica", 10)
-    p.drawString(20, height - 130, "Producto")
-    p.drawString(170, height - 130, "Primer Pesaje")
-    p.drawString(250, height - 130, "Último Pesaje")
-    p.drawString(320, height - 130, "Bolsas")
-    p.drawString(370, height - 130, "Duración (Hs)")
-    p.drawString(440, height - 130, "Tiempo Muerto (Hs)")
-    p.drawString(530, height - 130, "Total KG")
+        if not reportes:
+            flash("No hay datos para las fechas seleccionadas", "warning")
+            return redirect('/admin/reportes')
 
-    # Datos
-    y_position = height - 150
-    for row in reportes:
-        producto = row['producto']
-        primer_pesaje = row['primer_pesaje'].strftime('%H:%M:%S')
-        ultimo_pesaje = row['ultimo_pesaje'].strftime('%H:%M:%S')
-        bolsa_pesaje = str(row['cantidad_pesajes'])
-        horas_totales = str(row['horas_totales'])
-        tiempo_muerto_horas = str(row['tiempo_muerto_horas'])
-        total_peso_kg = str(row['total_peso_kg'])
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
 
-        p.drawString(20, y_position, producto)
-        p.drawString(170, y_position, primer_pesaje)
-        p.drawString(250, y_position, ultimo_pesaje)
-        p.drawString(320, y_position, bolsa_pesaje)
-        p.drawString(370, y_position, horas_totales)
-        p.drawString(440, y_position, tiempo_muerto_horas)
-        p.drawString(530, y_position, total_peso_kg)
+        def draw_headers(y_position):
+            """Dibuja los encabezados en cada página con el logo"""
+            logo_path = 'static/png/logo.jpg'
+            try:
+                p.drawImage(logo_path, 20, height - 65, width=76, height=50, mask='auto')
+            except Exception as e:
+                print(f"Error al cargar el logo: {e}")
+            
+            p.setFont("Helvetica-Bold", 10)
+            """Dibuja los encabezados en cada página"""
+            p.setFont("Helvetica-Bold", 10)
+            headers = ["Producto", "Primer Pesaje", "Último Pesaje", "Bolsas", "Duración (Hs)", "T. Muerto (Hs)", "Total KG"]
+            positions = [20, 170, 250, 320, 370, 440, 530]
+            for text, x in zip(headers, positions):
+                p.drawString(x, y_position, text)
+            p.line(20, y_position - 5, width - 20, y_position - 5)
+
+        # Título del reporte
+        p.setFont("Helvetica", 14)
+        p.drawString(100, height - 90, f"Reporte de Pesajes ({desde} al {hasta})")
+        p.line(20, height - 110, 580, height - 110)
+        y_position = height - 130
+        draw_headers(y_position)
+        y_position -= 20
+        p.setFont("Helvetica", 10)
+
+        # Datos
+        y_position = height - 150
+        for row in reportes:
+            producto = row['producto']
+            primer_pesaje = row['primer_pesaje'].strftime('%H:%M:%S')
+            ultimo_pesaje = row['ultimo_pesaje'].strftime('%H:%M:%S')
+            bolsa_pesaje = str(row['cantidad_pesajes'])
+            horas_totales = str(row['horas_totales'])
+            tiempo_muerto_horas = str(row['tiempo_muerto_horas'])
+            total_peso_kg = str(row['total_peso_kg'])
+            # y_position-= 15
+
+            p.drawString(20, y_position, producto)
+            p.drawString(180, y_position, primer_pesaje)
+            p.drawString(260, y_position, ultimo_pesaje)
+            p.drawString(330, y_position, bolsa_pesaje)
+            p.drawString(385, y_position, horas_totales)
+            p.drawString(460, y_position, tiempo_muerto_horas)
+            p.drawString(535, y_position, total_peso_kg)
+            y_position -= 20
+
+            if y_position < 50:
+                p.showPage()
+                p.setFont("Helvetica", 10)
+                y_position = height - 130
+                draw_headers(y_position)
+                p.setFont("Helvetica", 10)
+                y_position -= 20
+
+        # Calcular los totales por producto
+        totales_por_producto = defaultdict(float)
+        for row in reportes:
+            totales_por_producto[row['producto']] += float(row['total_peso_kg'])
+        # Total General
+        total_general = reportes[0]['total_general'] if 'total_general' in reportes[0] else 0
+        p.line(20, y_position, 580, y_position)
+        y_position -= 20
+        p.drawString(420, y_position, "TOTAL GENERAL (KG)")
+        p.drawString(530, y_position, f"{total_general:.2f}")
+        y_position-=20
+        if y_position < 100:
+            p.showPage()
+            p.setFont("Helvetica", 10)
+            y_position = height - 130
+            draw_headers(y_position)
+            p.setFont("Helvetica", 10)
+            y_position -= 20
+
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(20, y_position, "Resumen por Producto")
+        p.line(20, y_position - 5, width - 20, y_position - 5)
         y_position -= 20
 
-        if y_position < 50:
-            p.showPage()
-            y_position = height - 50
+        p.setFont("Helvetica", 10)
+        for producto, total_kg in totales_por_producto.items():
+            p.drawString(20, y_position, producto)
+            p.drawString(530, y_position, f"{total_kg:.2f}")
+            y_position -= 20
 
-    # Total General
-    total_general = reportes[0]['total_general'] if 'total_general' in reportes[0] else 0
-    p.line(20, y_position, 580, y_position)
-    y_position -= 20
-    p.drawString(420, y_position, "TOTAL GENERAL (KG)")
-    p.drawString(530, y_position, str(total_general))
+            if y_position < 50:
+                p.showPage()
+                p.setFont("Helvetica", 10)
+                y_position = height - 130
+                draw_headers(y_position)
+                p.setFont("Helvetica", 10)
+                y_position -= 20
 
-    p.save()
-    pdf = buffer.getvalue()
-    buffer.close()
+        p.save()
+        pdf = buffer.getvalue()
+        buffer.close()
 
-    response = make_response(pdf)
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = 'inline; filename=reportes.pdf'
-    return response
+        response = make_response(pdf)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = 'inline; filename=reportes.pdf'
+        return response
+        
+    except ValueError as e:
+        flash(f"Error en formato de fecha/hora: {str(e)}", "danger")
+        return redirect('/admin/reportes')
+    except Exception as e:
+        flash(f"Error interno: {str(e)}", "danger")
+        return redirect('/admin/reportes')
 
 # Ruta para cerrar sesión
 @app.route('/logout')

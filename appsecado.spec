@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['C:\\Users\\tincho\\Downloads\\Python\\AppSecado\\static\\favicon.ico'],
 )
