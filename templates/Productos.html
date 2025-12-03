@@ -13,101 +13,117 @@
     </div>
 </div>
 
-<h1 class="text-center">Gestión de Productos</h1>
+<h1 class="text-center my-4"><i class="bi bi-box-seam text-success"></i> Gestión de Productos</h1>
 <hr>
 
 <div class="row">
+    <!-- Columna del Formulario -->
     <div class="col-md-4">
-        <div class="card mb-3">
-            <div class="card-header">
-                {{ 'Nuevo Producto' if not producto_editado else 'Editar Producto' }}
+        <div class="card mb-3 shadow-sm border-0">
+            <div class="card-header bg-success text-white fw-bold" id="cardTitle">
+                <i class="bi bi-plus-circle me-2"></i>Nuevo Producto
             </div>
-            <div class="card-body">
-                <form id="formularioProducto" method="POST"
-                    action="{% if producto_editado %}/editar_producto/{{ producto_editado['producto_id'] }}{% else %}/crear_producto{% endif %}">
+            <div class="card-body bg-light">
+                <form id="formularioProducto" method="POST" action="/crear_producto">
                     <div class="mb-3">
-                        <label for="nombre" class="form-label">Nombre del Producto</label>
-                        <input type="text" class="form-control" id="nombre" name="nombre"
-                            value="{{ producto_editado['nombre_producto'] if producto_editado else '' }}" required>
+                        <label for="nombre" class="form-label fw-bold">Nombre del Producto</label>
+                        <input type="text" class="form-control" id="nombre" name="nombre" required placeholder="Ej: Yerba Mate Premium">
                     </div>
                     <div class="mb-3">
-                        <label for="calidad" class="form-label">Calidad</label>
-                        <select class="form-control" id="calidad" name="calidad" required>
-                            <option value="Canchada" {% if producto_editado and producto_editado['calidad'] == 'Canchada' %}selected{% endif %}>Canchada</option>
-                            <option value="Despalada" {% if producto_editado and producto_editado['calidad'] == 'Despalada' %}selected{% endif %}>Despalada</option>
-                            <option value="Con Palo" {% if producto_editado and producto_editado['calidad'] == 'Con Palo' %}selected{% endif %}>Con Palo</option>
-                            <option value="Elaborada" {% if producto_editado and producto_editado['calidad'] == 'Elaborada' %}selected{% endif %}>Elaborada</option>
-                            <option value="Barbacuá" {% if producto_editado and producto_editado['calidad'] == 'Barbacuá' %}selected{% endif %}>Barbacuá</option>
-                            <option value="Orgánica" {% if producto_editado and producto_editado['calidad'] == 'Orgánica' %}selected{% endif %}>Orgánica</option>
-                            <option value="Estacionada Tradicional" {% if producto_editado and producto_editado['calidad'] == 'Estacionada Tradicional' %}selected{% endif %}>Estacionada Tradicional</option>
-                            <option value="Estacionada Rápida" {% if producto_editado and producto_editado['calidad'] == 'Estacionada Rápida' %}selected{% endif %}>Estacionada Rápida</option>
+                        <label for="calidad" class="form-label fw-bold">Calidad</label>
+                        <select class="form-select" id="calidad" name="calidad" required>
+                            <option value="" selected disabled>Seleccione calidad...</option>
+                            <option value="Canchada">Canchada</option>
+                            <option value="Despalada">Despalada</option>
+                            <option value="Con Palo">Con Palo</option>
+                            <option value="Elaborada">Elaborada</option>
+                            <option value="Barbacuá">Barbacuá</option>
+                            <option value="Orgánica">Orgánica</option>
+                            <option value="Estacionada Tradicional">Estacionada Tradicional</option>
+                            <option value="Estacionada Rápida">Estacionada Rápida</option>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="descripcion" class="form-label">Descripción</label>
-                        <textarea class="form-control" id="descripcion" name="descripcion" rows="3">{{ producto_editado['descripcion'] if producto_editado else '' }}</textarea>
+                        <label for="descripcion" class="form-label fw-bold">Descripción</label>
+                        <textarea class="form-control" id="descripcion" name="descripcion" rows="3" placeholder="Detalles adicionales..."></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary">{{ 'Guardar Cambios' if producto_editado else 'Crear Producto' }}</button>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="button" id="btnCancelar" class="btn btn-secondary me-md-2" style="display: none;">Cancelar</button>
+                        <button type="submit" id="btnSubmit" class="btn btn-success">Crear Producto</button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 
+    <!-- Columna de la Tabla -->
     <div class="col-md-8">
-        <div class="card">
-            <div class="card-header">
-                Listado de Productos
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white fw-bold">
+                <i class="bi bi-list-ul me-2"></i>Listado de Productos
             </div>
-            <div class="table-responsive mt-3">
-                <table id="productos" class="table table-striped table-bordered table-hover" style="width: 100%;">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Nombre del Producto</th>
-                            <th>Calidad</th>
-                            <th>Descripción</th> <!-- Nueva columna Descripción -->
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for producto in productos %}
-                        <tr>
-                            <td>{{ producto['producto_id'] }}</td>
-                            <td>{{ producto['nombre_producto'] }}</td>
-                            <td>{{ producto['calidad'] }}</td>
-                            <td>{{ producto['descripcion'] }}</td> <!-- Mostrar la descripción -->
-                            <td>
-                                <button class="btn btn-warning btn-sm edit-producto"
-                                    data-id="{{ producto['producto_id'] }}" data-nombre="{{ producto['nombre_producto'] }}"
-                                    data-calidad="{{ producto['calidad'] }}" data-descripcion="{{ producto['descripcion'] }}">
-                                    <i class="bi bi-pencil"></i></button>
-                                <button class="btn btn-danger btn-sm delete-producto"
-                                    data-id="{{ producto['producto_id'] }}">
-                                    <i class="bi bi-trash"></i></button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table id="productos" class="table table-striped table-hover align-middle" style="width: 100%;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre</th>
+                                <th>Calidad</th>
+                                <th>Descripción</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for producto in productos %}
+                            <tr>
+                                <td>{{ producto['producto_id'] }}</td>
+                                <td class="fw-bold text-success">{{ producto['nombre_producto'] }}</td>
+                                <td><span class="badge bg-secondary">{{ producto['calidad'] }}</span></td>
+                                <td class="text-muted small">{{ producto['descripcion'] }}</td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-warning btn-sm edit-producto text-white"
+                                            data-id="{{ producto['producto_id'] }}" 
+                                            data-nombre="{{ producto['nombre_producto'] }}"
+                                            data-calidad="{{ producto['calidad'] }}" 
+                                            data-descripcion="{{ producto['descripcion'] }}"
+                                            title="Editar">
+                                            <i class="bi bi-pencil-fill"></i>
+                                        </button>
+                                        <button class="btn btn-danger btn-sm delete-producto"
+                                            data-id="{{ producto['producto_id'] }}"
+                                            title="Eliminar">
+                                            <i class="bi bi-trash-fill"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Modal de confirmación -->
-<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-labelledby="confirmDeleteLabel" aria-hidden="true">
-    <div class="modal-dialog">
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="confirmDeleteLabel">Confirmar eliminación</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirmar eliminación</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                ¿Estás seguro de que deseas eliminar este producto?
+            <div class="modal-body text-center py-4">
+                <p class="fs-5">¿Estás seguro de que deseas eliminar este producto?</p>
+                <p class="text-muted small">Esta acción no se puede deshacer.</p>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteButton">Eliminar</button>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger px-4" id="confirmDeleteButton">Eliminar</button>
             </div>
         </div>
     </div>
@@ -121,21 +137,101 @@
 <script src="{{ url_for('static', filename='Datatables/js/buttons.print.min.js') }}"></script>
 <script>
     $(document).ready(function () {
-        var deleteProductoId = null;
-
+        // Inicializar DataTable
         $('#productos').DataTable({
             "language": { "url": '{{ url_for("static", filename="Datatables/plug-ins/es-ES.json") }}' },
             "paging": true,
             "searching": true,
             "ordering": true,
-            "lengthChange": true,
-            "pageLength": 10,
+            "pageLength": 8,
             "dom": 'Bfrtip',
-            "buttons": ['csv', 'excel', 'pdf', 'copy', 'print', 'pageLength'],
-            "select": true
+            "buttons": ['copy', 'print']
         });
 
-        // Manejar la eliminación de un producto
+        // --- LÓGICA DE EDICIÓN Y CREACIÓN (FIX) ---
+        
+        // 1. Al hacer clic en "Editar" (Lápiz)
+        $('.edit-producto').click(function (e) {
+            e.preventDefault();
+            
+            // Obtener datos del botón
+            var id = $(this).data('id');
+            var nombre = $(this).data('nombre');
+            var calidad = $(this).data('calidad');
+            var descripcion = $(this).data('descripcion');
+
+            // Rellenar formulario
+            $('#nombre').val(nombre);
+            $('#calidad').val(calidad);
+            $('#descripcion').val(descripcion);
+
+            // CAMBIAR LA APARIENCIA DEL FORMULARIO A "MODO EDICIÓN"
+            $('#formularioProducto').attr('action', '/editar_producto/' + id); // Cambiar URL de destino
+            
+            // Cambios visuales
+            $('#cardTitle').html('<i class="bi bi-pencil-square me-2"></i>Editar Producto');
+            $('#cardTitle').removeClass('bg-success').addClass('bg-warning text-dark');
+            
+            $('#btnSubmit').text('Guardar Cambios');
+            $('#btnSubmit').removeClass('btn-success').addClass('btn-warning text-dark');
+            
+            // Mostrar botón cancelar
+            $('#btnCancelar').show();
+            
+            // Scroll suave hacia el formulario (útil en móviles)
+            $('html, body').animate({
+                scrollTop: $("#formularioProducto").offset().top - 100
+            }, 500);
+        });
+
+        // 2. Al hacer clic en "Cancelar"
+        $('#btnCancelar').click(function() {
+            resetForm();
+        });
+
+        // Función para volver al estado original "Crear"
+        function resetForm() {
+            $('#formularioProducto')[0].reset(); // Limpiar inputs
+            $('#formularioProducto').attr('action', '/crear_producto'); // Restaurar URL
+            
+            // Restaurar visuales
+            $('#cardTitle').html('<i class="bi bi-plus-circle me-2"></i>Nuevo Producto');
+            $('#cardTitle').removeClass('bg-warning text-dark').addClass('bg-success text-white');
+            
+            $('#btnSubmit').text('Crear Producto');
+            $('#btnSubmit').removeClass('btn-warning text-dark').addClass('btn-success');
+            
+            $('#btnCancelar').hide();
+        }
+
+        // 3. Manejo del Envío del Formulario (AJAX)
+        $('#formularioProducto').submit(function (e) {
+            e.preventDefault();
+            var form = $(this);
+            var url = form.attr('action'); // Tomará /crear o /editar dinámicamente
+            
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: form.serialize(),
+                success: function (response) {
+                    var bsToast = showToast(response.message, 'success');
+                    // Recargar página al cerrarse el toast para ver cambios en la tabla
+                    bsToast._element.addEventListener('hidden.bs.toast', function () {
+                        location.reload();
+                    });
+                    resetForm(); // Limpiar formulario
+                },
+                error: function (xhr) {
+                    var response = xhr.responseJSON;
+                    showToast(response.message || 'Ha ocurrido un error', 'danger');
+                }
+            });
+        });
+
+        // --- LÓGICA DE ELIMINACIÓN ---
+        var deleteProductoId = null;
+        
         $('.delete-producto').click(function (e) {
             e.preventDefault();
             deleteProductoId = $(this).data('id');
@@ -155,51 +251,14 @@
                         });
                     },
                     error: function (xhr) {
-                        var response = xhr.responseJSON;
-                        showToast(response.message || 'Ha ocurrido un error', 'danger');
+                        showToast('Error al eliminar producto', 'danger');
                     }
                 });
-                var modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
+                // Ocultar modal
+                var modalEl = document.getElementById('confirmDeleteModal');
+                var modal = bootstrap.Modal.getInstance(modalEl);
                 modal.hide();
             }
-        });
-
-        // Manejar la edición de un producto
-        $('.edit-producto').click(function (e) {
-            e.preventDefault();
-            var id = $(this).data('id');
-            var nombre = $(this).data('nombre');
-            var calidad = $(this).data('calidad');
-            var descripcion = $(this).data('descripcion');  // Nuevo campo descripción
-
-            $('#nombre').val(nombre);
-            $('#calidad').val(calidad);
-            $('#descripcion').val(descripcion);  // Asignar descripción al formulario
-            $('#formularioProducto').attr('action', '/editar_producto/' + id);
-        });
-
-        // Restablecer el formulario para crear un nuevo producto
-        $('#formularioProducto').submit(function (e) {
-            e.preventDefault();
-            var form = $(this);
-            var url = form.attr('action');
-            $.ajax({
-                url: url,
-                type: 'POST',
-                data: form.serialize(),
-                success: function (response) {
-                    var bsToast = showToast(response.message, 'success');
-                    bsToast._element.addEventListener('hidden.bs.toast', function () {
-                        location.reload();
-                    });
-                    form.trigger('reset');
-                    form.attr('action', '/crear_producto'); // Restablecer la acción del formulario a la creación
-                },
-                error: function (xhr) {
-                    var response = xhr.responseJSON;
-                    showToast(response.message || 'Ha ocurrido un error', 'danger');
-                }
-            });
         });
     });
 </script>

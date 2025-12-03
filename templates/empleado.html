@@ -15,95 +15,115 @@
     </div>
 </div>
 
-<h1>Gestión de Empleados</h1><hr>
+<h1 class="text-center my-4"><i class="bi bi-people-fill text-success"></i> Gestión de Empleados</h1>
+<hr>
 
 <div class="row">
+    <!-- Columna del Formulario -->
     <div class="col-md-4">
-        <div class="card mb-3">
-            <div class="card-header">
-                {{ 'Nuevo Empleado' if not empleado_editado else 'Editar empleado' }}
+        <div class="card mb-3 shadow-sm border-0">
+            <div class="card-header bg-success text-white fw-bold" id="cardTitle">
+                <i class="bi bi-plus-circle me-2"></i>Nuevo Empleado
             </div>
-            <div class="card-body">
-                <form id="formularioempleado" method="POST"
-                    action="{% if empleado_editado %}/editar_empleado/{{ empleado_editado[0] }}{% else %}/crear_empleado{% endif %}">
+            <div class="card-body bg-light">
+                <form id="formularioempleado" method="POST" action="/crear_empleado">
                     <div class="mb-3">
-                        <label for="empleado" class="form-label">empleado</label>
-                        <input type="text" class="form-control" id="empleado" name="empleado"
-                            value="{{ empleado_editado[1] if empleado_editado else '' }}" required
-                            autocomplete="username">
+                        <label for="empleado" class="form-label fw-bold">Nombre del Empleado</label>
+                        <input type="text" class="form-control" id="empleado" name="empleado" required placeholder="Nombre Completo">
                     </div>                    
                     <div class="mb-3">
-                        <label for="rol" class="form-label">Rol</label>
-                        <select class="form-control" id="rol" name="rol" required>
-                            <option value="OPERARiO" {% if empleado_editado and empleado_editado[3]=='OPERARIO'
-                                %}selected{% endif %}>OPERARIO</option>
-                            <option value="SUPERVISOR" {% if empleado_editado and empleado_editado[3]=='SUPERVISOR' %}selected{%
-                                endif %}>SUPERVISOR</option>
+                        <label for="rol" class="form-label fw-bold">Puesto / Rol</label>
+                        <select class="form-select" id="rol" name="rol" required>
+                            <option value="" selected disabled>Seleccione un rol...</option>
+                            <option value="OPERARIO">OPERARIO</option>
+                            <option value="SUPERVISOR">SUPERVISOR</option>
+                            <option value="ADMINISTRATIVO">ADMINISTRATIVO</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary">{{ 'Guardar Cambios' if empleado_editado else 'Crear
-                        empleado' }}</button>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="button" id="btnCancelar" class="btn btn-secondary me-md-2" style="display: none;">Cancelar</button>
+                        <button type="submit" id="btnSubmit" class="btn btn-success">Crear Empleado</button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 
+    <!-- Columna de la Tabla -->
     <div class="col-md-8">
-        <div class="card">
-            <div class="card-header">
-                Listado de empleados
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white fw-bold">
+                <i class="bi bi-list-ul me-2"></i>Listado de Personal
             </div>
             <div class="card-body">
-                <table id="empleados" class="table table-striped table-bordered table-hover" style="width: 100%;">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>empleado</th>
-                            <th>Rol</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for empleado in empleados %}
-                        <tr>
-                            <td>{{ empleado.id }}</td>
-                            <td>{{ empleado.nombre }}</td> <!-- Cambia empleado.empleado a empleado.nombre -->
-                            <td>{{ empleado.puesto }}</td> <!-- Cambia empleado.rol a empleado.puesto -->
-                            <td>
-                                <a href="#" class="btn btn-warning btn-sm edit-empleado" data-id="{{ empleado.id }}"
-                                    data-empleado="{{ empleado.nombre }}" data-rol="{{ empleado.puesto }}"><i
-                                        class="bi bi-pencil"></i></a>
-                                <a href="#" class="btn btn-danger btn-sm delete-empleado" data-id="{{ empleado.id }}"><i
-                                        class="bi bi-trash"></i></a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>                    
-                </table>
+                <div class="table-responsive">
+                    <table id="empleados" class="table table-striped table-hover align-middle" style="width: 100%;">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre</th>
+                                <th>Puesto</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for empleado in empleados %}
+                            <tr>
+                                <td>{{ empleado.id }}</td>
+                                <td class="fw-bold">{{ empleado.nombre }}</td>
+                                <td>
+                                    {% if empleado.puesto == 'SUPERVISOR' %}
+                                        <span class="badge bg-primary">SUPERVISOR</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ empleado.puesto }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-warning btn-sm edit-empleado text-white" 
+                                            data-id="{{ empleado.id }}"
+                                            data-empleado="{{ empleado.nombre }}" 
+                                            data-rol="{{ empleado.puesto }}"
+                                            title="Editar">
+                                            <i class="bi bi-pencil-fill"></i>
+                                        </button>
+                                        <button class="btn btn-danger btn-sm delete-empleado" 
+                                            data-id="{{ empleado.id }}"
+                                            title="Eliminar">
+                                            <i class="bi bi-trash-fill"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>                    
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Modal de confirmación -->
-<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-labelledby="confirmDeleteLabel" aria-hidden="true">
-    <div class="modal-dialog">
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="confirmDeleteLabel">Confirmar eliminación</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Confirmar eliminación</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                ¿Estás seguro de que deseas eliminar este empleado?
+            <div class="modal-body text-center py-4">
+                <p class="fs-5">¿Estás seguro de que deseas eliminar este empleado?</p>
+                <p class="text-muted small">Esta acción no se puede deshacer.</p>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteButton">Eliminar</button>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger px-4" id="confirmDeleteButton">Eliminar</button>
             </div>
         </div>
     </div>
 </div>
-
 
 {% endblock %}
 
@@ -114,29 +134,97 @@
 <script>
     $(document).ready(function () {
         var deleteUserId = null;
+        
+        // Inicialización DataTable
         $('#empleados').DataTable({
-            "language": {
-                "url": '{{ url_for("static", filename="Datatables/plug-ins/es-ES.json") }}',
-                "paginate": {
-                    "first": "&laquo;&laquo;", // símbolo de primero
-                    "last": "&raquo;&raquo;", // símbolo de último
-                    "previous": "&lt;", // símbolo de anterior
-                    "next": "&gt;" // símbolo de siguiente
-                }
-            },
-            "responsive" :true,
+            "language": { "url": '{{ url_for("static", filename="Datatables/plug-ins/es-ES.json") }}' },
             "paging": true,
             "searching": true,
             "ordering": true,
-            "lengthChange": true,
             "pageLength": 10,
-            "resposive": true,
             "dom": 'Bfrtip',
-            "buttons": ['csv', 'excel', 'pdf', 'copy', 'print', 'pageLength'],
-            "select": true
+            "buttons": ['copy', 'print']
         });
 
-        // Manejar la eliminación de un empleado
+        // --- LÓGICA DE EDICIÓN Y CREACIÓN ---
+
+        // 1. Al hacer clic en "Editar"
+        $('.edit-empleado').click(function (e) {
+            e.preventDefault();
+            
+            // Obtener datos
+            var id = $(this).data('id');
+            var empleado = $(this).data('empleado');
+            var rol = $(this).data('rol');
+            
+            // Llenar formulario
+            $('#empleado').val(empleado);
+            $('#rol').val(rol);
+            
+            // Cambiar URL de acción
+            $('#formularioempleado').attr('action', '/editar_empleado/' + id);
+
+            // Cambios Visuales (Modo Edición)
+            $('#cardTitle').html('<i class="bi bi-pencil-square me-2"></i>Editar Empleado');
+            $('#cardTitle').removeClass('bg-success').addClass('bg-warning text-dark');
+            
+            $('#btnSubmit').text('Guardar Cambios');
+            $('#btnSubmit').removeClass('btn-success').addClass('btn-warning text-dark');
+            
+            // Mostrar botón cancelar
+            $('#btnCancelar').show();
+            
+            // Scroll suave
+            $('html, body').animate({
+                scrollTop: $("#formularioempleado").offset().top - 100
+            }, 500);
+        });
+
+        // 2. Al hacer clic en "Cancelar"
+        $('#btnCancelar').click(function() {
+            resetForm();
+        });
+
+        // Función para resetear el formulario al estado "Nuevo"
+        function resetForm() {
+            $('#formularioempleado')[0].reset();
+            $('#formularioempleado').attr('action', '/crear_empleado');
+            
+            // Restaurar visuales
+            $('#cardTitle').html('<i class="bi bi-plus-circle me-2"></i>Nuevo Empleado');
+            $('#cardTitle').removeClass('bg-warning text-dark').addClass('bg-success text-white');
+            
+            $('#btnSubmit').text('Crear Empleado');
+            $('#btnSubmit').removeClass('btn-warning text-dark').addClass('btn-success');
+            
+            $('#btnCancelar').hide();
+        }
+
+        // 3. Envío del Formulario
+        $('#formularioempleado').submit(function (e) {
+            e.preventDefault();
+            var form = $(this);
+            var url = form.attr('action');
+            
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: form.serialize(),
+                success: function (response) {
+                    var bsToast = showToast(response.message, 'success');
+                    bsToast._element.addEventListener('hidden.bs.toast', function () {
+                        location.reload();
+                    });
+                    resetForm();
+                },
+                error: function (xhr) {
+                    var response = xhr.responseJSON;
+                    showToast(response.message || 'Ha ocurrido un error', 'danger');
+                }
+            });
+        });
+
+        // --- LÓGICA DE ELIMINACIÓN ---
         $('.delete-empleado').click(function (e) {
             e.preventDefault();
             deleteUserId = $(this).data('id');
@@ -156,59 +244,12 @@
                         });
                     },
                     error: function (xhr) {
-                        var response = xhr.responseJSON;
-                        showToast(response.message || 'Ha ocurrido un error', 'danger');
+                        showToast('Error al eliminar empleado', 'danger');
                     }
                 });
-                var modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
+                var modalEl = document.getElementById('confirmDeleteModal');
+                var modal = bootstrap.Modal.getInstance(modalEl);
                 modal.hide();
-            }
-        });
-
-        // Manejar la respuesta del formulario de creación/edición
-        $('#formularioempleado').submit(function (e) {
-            e.preventDefault();
-            var form = $(this);
-            var url = form.attr('action');
-            $.ajax({
-                url: url,
-                type: 'POST',
-                data: form.serialize(),
-                success: function (response) {
-                    var bsToast = showToast(response.message, 'success');
-                    bsToast._element.addEventListener('hidden.bs.toast', function () {
-                        location.reload();
-                    });
-                    form.trigger('reset');
-                },
-                error: function (xhr) {
-                    var response = xhr.responseJSON;
-                    showToast(response.message || 'Ha ocurrido un error', 'danger');
-                }
-            });
-        });
-
-        // Manejar la edición de un empleado
-        $('.edit-empleado').click(function (e) {
-            e.preventDefault();
-            var id = $(this).data('id');
-            var empleado = $(this).data('empleado');  // Cambia 'empleado' por 'nombre'
-            var rol = $(this).data('rol');            // Cambia 'rol' por 'puesto'
-            $('#empleado').val(empleado);
-            $('#rol').val(rol);
-            $('#formularioempleado').attr('action', '/editar_empleado/' + id);
-
-            var btnSuccess = $('#formularioempleado').find('.btn-primary');
-
-            if (btnSuccess.text().trim() === 'Crear empleado') {
-                btnSuccess.text('Guardar Cambios');
-            } else {
-                btnSuccess.text('Crear empleado');
-                // Limpiar el formulario
-                $('#empleado').val('');
-                $('#contrasena').val('');
-                $('#rol').val('');
-                $('#formularioempleado').attr('action', '/crear_empleado'); // Ajusta la acción según sea necesario
             }
         });
     });
