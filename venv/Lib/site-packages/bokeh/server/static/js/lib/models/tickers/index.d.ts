@@ -12,6 +12,7 @@ export { MercatorTicker } from "./mercator_ticker";
 export { MonthsTicker } from "./months_ticker";
 export { SingleIntervalTicker } from "./single_interval_ticker";
 export { Ticker } from "./ticker";
+export { TimedeltaTicker } from "./timedelta_ticker";
 export { YearsTicker } from "./years_ticker";
 export { BinnedTicker } from "./binned_ticker";
 //# sourceMappingURL=index.d.ts.map

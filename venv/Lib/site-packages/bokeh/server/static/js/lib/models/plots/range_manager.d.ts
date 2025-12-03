@@ -17,6 +17,7 @@ export declare class RangeManager {
     readonly parent: PlotView;
     constructor(parent: PlotView);
     get frame(): CartesianFrameView;
+    warn_initial_ranges: boolean;
     invalidate_dataranges: boolean;
     update(range_info: RangeInfo, options?: Partial<RangeOptions>): void;
     ranges(): {

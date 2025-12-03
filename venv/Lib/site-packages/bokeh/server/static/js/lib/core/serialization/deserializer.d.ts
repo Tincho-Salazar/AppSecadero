@@ -27,7 +27,7 @@ export declare class Deserializer {
     protected _decode_array(obj: ArrayRep): unknown[];
     protected _decode_set(obj: SetRep): Set<unknown>;
     protected _decode_map(obj: MapRep): Map<unknown, unknown> | PlainObject<unknown>;
-    protected _decode_bytes(obj: BytesRep): ArrayBuffer;
+    protected _decode_bytes(obj: BytesRep): ArrayBufferLike;
     protected _decode_slice(obj: SliceRep): Slice;
     protected _decode_date(obj: DateRep): Date;
     protected _decode_value(obj: ValueRep): Value<unknown>;

@@ -7,13 +7,11 @@ import type { Range } from "../ranges";
 import type { Scale } from "../scales";
 import type { Ticker } from "../tickers/ticker";
 import type * as p from "../../core/properties";
-import type { Layoutable } from "../../core/layout";
 import type { Arrayable } from "../../core/types";
 import type { BBox } from "../../core/util/bbox";
 import type { Context2d } from "../../core/util/canvas";
 export declare class ColorBarView extends BaseColorBarView {
     model: ColorBar;
-    layout: Layoutable;
     protected _image: HTMLCanvasElement | null;
     protected _index_low: number | null;
     protected _index_high: number | null;
@@ -41,6 +39,7 @@ export declare namespace ColorBar {
         color_mapper: p.Property<ColorMapper>;
         display_low: p.Property<number | null>;
         display_high: p.Property<number | null>;
+        scale_alpha: p.Property<number>;
     };
 }
 export interface ColorBar extends ColorBar.Attrs {

@@ -5,6 +5,7 @@ import type * as p from "../../core/properties";
 export declare class DatetimeRangePickerView extends BaseDatetimePickerView {
     model: DatetimeRangePicker;
     protected get flatpickr_options(): flatpickr.Options.Options;
+    protected _on_close(selected: Date[]): void;
     protected _on_change(selected: Date[]): void;
 }
 export declare namespace DatetimeRangePicker {

@@ -17,10 +17,7 @@ export declare class WeightedStackColorMapper extends StackColorMapper {
     properties: WeightedStackColorMapper.Props;
     constructor(attrs?: Partial<WeightedStackColorMapper.Attrs>);
     protected _mix_colors(colors_rgba: RGBAArray, nan_color: uint32, weights: Array<number>, total_weight: number): uint32;
-    protected _v_compute<T>(_data: Arrayable<number>, _values: Arrayable<T>, _palette: Arrayable<T>, _colors: {
-        nan_color: T;
-    }): void;
-    protected _v_compute_uint32(data: ArrayableOf<number>, values: Arrayable<uint32>, palette: Arrayable<uint32>, colors: {
+    protected _v_compute(data: ArrayableOf<number>, values: Arrayable<uint32>, palette: Arrayable<uint32>, colors: {
         nan_color: uint32;
     }): void;
 }

@@ -13,7 +13,7 @@ import { Figure as BaseFigure } from "../models/plots/figure";
 import type { NamesOf } from "./glyph_api";
 import { GlyphAPI } from "./glyph_api";
 export type ToolName = keyof ToolAliases;
-export type AxisType = "auto" | "linear" | "datetime" | "log" | "mercator" | null;
+export type AxisType = "auto" | "linear" | "datetime" | "timedelta" | "log" | "mercator" | null;
 export type AxisLocation = Location | null;
 export declare namespace Figure {
     type Attrs = Omit<Plot.Attrs, "x_range" | "y_range"> & {

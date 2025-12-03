@@ -82,6 +82,7 @@ export declare namespace DataTable {
         scroll_to_selection: p.Property<boolean>;
         header_row: p.Property<boolean>;
         row_height: p.Property<number>;
+        multi_selectable: p.Property<boolean>;
     };
 }
 export interface DataTable extends DataTable.Attrs {

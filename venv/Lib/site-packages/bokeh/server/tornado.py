@@ -446,19 +446,17 @@ class BokehTornado(TornadoApplication):
                         "index": self._index,
                         "use_redirect": redirect_root,
                     }
-                    prefixed_pat = (self._prefix + p[0],) + p[1:] + (data,)
-                    all_patterns.append(prefixed_pat) # type: ignore[arg-type] # TODO: easy to fix types, but also easy to break logic
+                    prefixed_pat = (self._prefix + p[0], *p[1:], data)
+                    all_patterns.append(prefixed_pat)
             else:
-                prefixed_pat = (self._prefix + p[0],) + p[1:]
-                all_patterns.append(prefixed_pat) # type: ignore[arg-type] # TODO: easy to fix types, but also easy to break logic
+                prefixed_pat = (self._prefix + p[0], *p[1:])
+                all_patterns.append(prefixed_pat)
 
         log.debug("Patterns are:")
         for line in pformat(all_patterns, width=60).split("\n"):
             log.debug("  " + line)
 
-        super().__init__(all_patterns, # type: ignore[arg-type] # TODO: this may be another bug in mypy (not sure; but looks suspicious)
-            websocket_max_message_size=websocket_max_message_size_bytes,
-            **kwargs)
+        super().__init__(all_patterns, websocket_max_message_size=websocket_max_message_size_bytes, **kwargs)
 
     def initialize(self, io_loop: IOLoop) -> None:
         ''' Start a Bokeh Server Tornado Application on a given Tornado IOLoop.

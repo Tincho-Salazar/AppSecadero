@@ -21,7 +21,7 @@ i.e.,
 
     http://localhost:{DEFAULT_PORT}/app_script
 
-It is also possible to run the same commmand with jupyter notebooks:
+It is also possible to run the same command with jupyter notebooks:
 
 .. code-block:: sh
 
@@ -943,7 +943,9 @@ class Serve(Subcommand):
 
         if server_kwargs['autoreload']:
             if len(applications.keys()) != 1:
-                die("--dev can only support a single app.")
+                die("Bokeh server --dev option can only support a single app")
+            if len(args.files) == 0:
+                die("Bokeh server --dev option requires an app script or directory be provided")
             if server_kwargs['num_procs'] != 1:
                 log.info("Running in --dev mode. --num-procs is limited to 1.")
                 server_kwargs['num_procs'] = 1
@@ -981,7 +983,7 @@ class Serve(Subcommand):
                     url = f"{protocol}://{address_string}:{server.port}{server.prefix}{route}"
                     log.info(f"Bokeh app running at: {url}")
 
-                log.info("Starting Bokeh server with process id: %d" % os.getpid())
+                log.info(f"Starting Bokeh server with process id: {os.getpid()}")
 
             server = self.customize_server(server)
 

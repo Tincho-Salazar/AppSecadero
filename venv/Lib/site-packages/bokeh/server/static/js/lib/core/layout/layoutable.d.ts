@@ -36,6 +36,10 @@ export declare abstract class Layoutable {
     apply_aspect(viewport: Size, { width, height }: Size): Size;
     protected abstract _measure(viewport: Sizeable): SizeHint;
     measure(viewport_size: Size): SizeHint;
+    protected _compute(viewport: Partial<Size>): {
+        outer: BBox;
+        inner?: BBox;
+    };
     compute(viewport?: Partial<Size>): void;
     get xview(): CoordinateMapper;
     get yview(): CoordinateMapper;
@@ -45,6 +49,11 @@ export declare abstract class Layoutable {
 export declare abstract class ContentLayoutable extends Layoutable {
     protected abstract _content_size(): Sizeable;
     protected _measure(viewport: Sizeable): SizeHint;
+}
+export declare class ElementLayout extends ContentLayoutable {
+    readonly el: HTMLElement;
+    constructor(el: HTMLElement);
+    _content_size(): Sizeable;
 }
 export declare class TextLayout extends ContentLayoutable {
     readonly text: TextBox;

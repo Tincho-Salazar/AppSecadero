@@ -1,5 +1,5 @@
 import { Message } from "./message";
-export type Fragment = string | ArrayBuffer;
+export type Fragment = string | ArrayBufferLike;
 export declare class Receiver {
     message: Message<unknown> | null;
     protected _partial: Message<unknown> | null;

@@ -18,6 +18,7 @@ export { LegendItem } from "./legend_item";
 export { PolyAnnotation } from "./poly_annotation";
 export { ScaleBar } from "./scale_bar";
 export { Metric, ReciprocalMetric, MetricLength, ReciprocalMetricLength, ImperialLength, Angular, } from "./dimensional";
+export { SizeBar } from "./size_bar";
 export { Slope } from "./slope";
 export { Span } from "./span";
 export { TextAnnotation } from "./text_annotation";

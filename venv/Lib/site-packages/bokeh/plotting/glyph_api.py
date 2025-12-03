@@ -158,7 +158,7 @@ Examples:
         from bokeh.plotting import figure, show
 
         plot = figure(width=300, height=300)
-        plot.block(x=[1, 2, 3], y=[1,2,3], width=0.5, height=1, , color="#CAB2D6")
+        plot.block(x=[1, 2, 3], y=[1,2,3], width=0.5, height=1, color="#CAB2D6")
 
         show(plot)
 
@@ -1115,7 +1115,8 @@ Examples:
 
             size (str or list[float]) : values or field names of sizes in |screen units|
 
-            marker (str, or list[str]): values or field names of marker types
+            marker (str, or list[str]): values or field names of marker types, visit
+                :class:`~bokeh.core.enums.MarkerType` for a complete list of valid values.
 
             color (color value, optional): shorthand to set both fill and line color
 

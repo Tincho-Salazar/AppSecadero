@@ -1,3 +1,5 @@
+export declare const ONE_NANO = 0.000001;
+export declare const ONE_MICRO = 0.001;
 export declare const ONE_MILLI = 1;
 export declare const ONE_SECOND = 1000;
 export declare const ONE_MINUTE: number;

@@ -12,9 +12,10 @@ import type { Axis } from "../models/axes/axis";
 import type { LegendItem } from "../models/annotations/legend_item";
 import type { Factor } from "../models/ranges/factor_range";
 import type { ClearInput } from "../models/widgets/input_widget";
+import type { ClientConnection } from "../client/connection";
 export type BokehEventType = DocumentEventType | ModelEventType;
 export type DocumentEventType = "document_ready" | ConnectionEventType;
-export type ConnectionEventType = "connection_lost";
+export type ConnectionEventType = "connection_lost" | "client_reconnected";
 export type ModelEventType = "axis_click" | "button_click" | "legend_item_click" | "menu_item_click" | "value_submit" | UIEventType;
 export type UIEventType = "lodstart" | "lodend" | "rangesupdate" | "selectiongeometry" | "reset" | PointEventType;
 export type PointEventType = "pan" | "pinch" | "rotate" | "wheel" | "mousemove" | "mouseenter" | "mouseleave" | "tap" | "doubletap" | "press" | "pressup" | "panstart" | "panend" | "pinchstart" | "pinchend" | "rotatestart" | "rotateend";
@@ -27,6 +28,7 @@ export type BokehEventMap = {
     button_click: ButtonClick;
     clear_input: ClearInput;
     connection_lost: ConnectionLost;
+    client_reconnected: ClientReconnected;
     document_ready: DocumentReady;
     doubletap: DoubleTap;
     legend_item_click: LegendItemClick;
@@ -88,8 +90,27 @@ export declare class DocumentReady extends DocumentEvent {
 }
 export declare abstract class ConnectionEvent extends DocumentEvent {
 }
+/**
+ * Announce when a WebSocket connection was disconnected.
+ *
+ * @member timestamp when the last connection attempt was made
+ * @member attempts  the number of times reconnection was attempted
+ * @member timeout   milliseconds till next reconnection attempt or `null`
+ *                   indicating that no further attempts will be made
+ */
 export declare class ConnectionLost extends ConnectionEvent {
-    readonly timestamp: Date;
+    private readonly connection;
+    readonly attempts: number;
+    readonly timeout: number | null;
+    readonly timestamp: number;
+    constructor(connection: WeakRef<ClientConnection>, attempts: number, timeout: number | null);
+    protected get event_values(): Attrs;
+    reconnect(): void;
+}
+/**
+ * Announce when a connection to the client has been reconnected.
+ */
+export declare class ClientReconnected extends ConnectionEvent {
     protected get event_values(): Attrs;
 }
 export declare class AxisClick extends ModelEvent {

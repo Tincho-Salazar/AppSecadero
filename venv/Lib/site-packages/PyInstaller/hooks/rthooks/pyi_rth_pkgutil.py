@@ -9,19 +9,19 @@
 # SPDX-License-Identifier: Apache-2.0
 #-----------------------------------------------------------------------------
 #
-# The run-time hook provides a custom module iteration function for our PyiFrozenImporter, which allows
+# The run-time hook provides a custom module iteration function for our PyiFrozenFinder, which allows
 # `pkgutil.iter_modules()` to return entries for modules that are embedded in the PYZ archive. The non-embedded modules
 # (binary extensions, modules collected as only source .py files, etc.) are enumerated using the `fallback_finder`
-# provided by `PyiFrozenImporter` (which typically would be the python's `FileFinder`).
+# provided by `PyiFrozenFinder` (which typically would be the python's `FileFinder`).
 def _pyi_rthook():
     import pkgutil
 
     import pyimod02_importers  # PyInstaller's bootstrap module
 
-    # This could, in fact, be implemented as `iter_modules()` method of the `PyiFrozenImporter`. However, we want to
+    # This could, in fact, be implemented as `iter_modules()` method of the `PyiFrozenFinder`. However, we want to
     # avoid importing `pkgutil` in that bootstrap module (i.e., for the `pkgutil.iter_importer_modules()` call on the
     # fallback finder).
-    def _iter_pyi_frozen_file_finder_modules(finder, prefix=''):
+    def _iter_pyi_frozen_finder_modules(finder, prefix=''):
         # Fetch PYZ TOC tree from pyimod02_importers
         pyz_toc_tree = pyimod02_importers.get_pyz_toc_tree()
 
@@ -55,8 +55,8 @@ def _pyi_rthook():
             yield from pkgutil.iter_importer_modules(finder.fallback_finder, prefix)
 
     pkgutil.iter_importer_modules.register(
-        pyimod02_importers.PyiFrozenImporter,
-        _iter_pyi_frozen_file_finder_modules,
+        pyimod02_importers.PyiFrozenFinder,
+        _iter_pyi_frozen_finder_modules,
     )
 
 

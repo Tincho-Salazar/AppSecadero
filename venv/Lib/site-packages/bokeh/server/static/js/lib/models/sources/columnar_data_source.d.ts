@@ -8,6 +8,7 @@ import type { GlyphRenderer } from "../renderers/glyph_renderer";
 import { SelectionPolicy } from "../selections/interaction_policy";
 import { Selection } from "../selections/selection";
 import { DataSource } from "./data_source";
+import type { Index } from "../../core/util/templating";
 export declare namespace ColumnarDataSource {
     type Attrs = p.AttrsOf<Props>;
     type Props = DataSource.Props & {
@@ -34,6 +35,9 @@ export declare abstract class ColumnarDataSource extends DataSource {
     get<T = unknown>(name: string): Arrayable<T>;
     set(name: string, column: Arrayable<unknown>): void;
     get_column(name: string): Arrayable | null;
+    get_row(index: Index): {
+        [key: string]: unknown;
+    };
     columns(): string[];
     get_length(soft?: boolean): number | null;
     get length(): number;

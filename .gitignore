@@ -1,0 +1,4 @@
+# Carpetas a ignorar
+build/
+dist/
+venv/

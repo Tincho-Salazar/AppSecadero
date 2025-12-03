@@ -4,7 +4,7 @@ import type { ViewManager } from "./view_manager";
 export type { IterViews, ViewOf } from "./view";
 export type ViewStorage<T extends HasProps> = Map<T, ViewOf<T>>;
 export type Options<T extends View> = {
-    parent: T["parent"] | null;
+    parent: T["parent"] | null | ((obj: HasProps) => T["parent"] | null);
     owner?: ViewManager;
 };
 export declare function build_view<T extends HasProps>(model: T, options?: Options<ViewOf<T>>, cls?: (model: T) => T["default_view"]): Promise<ViewOf<T>>;

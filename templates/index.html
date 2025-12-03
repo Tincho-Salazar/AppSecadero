@@ -2,391 +2,356 @@
 
 {% block style %}
 <style>
-  /* General Dashboard Styles */
-  .dashboard {
+  /* KPI Cards */
+  .kpi-card {
+    background: #fff;
+    border-radius: 15px;
     padding: 20px;
-  }
-
-  /* Card Styles */
-  .card {
-    margin: 10px 0;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    border: none;
-  }
-
-  .card-body {
-    padding: 20px;
-    background-color: #f8f9fa;
-    border-radius: 10px;
-    transition: all 0.3s ease;
-  }
-
-  .card-body:hover {
-    background-color: #e2e6ea;
-    transform: scale(1.05);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  /* Chart Container Styles */
-  .chart-container {
+    height: 100%;
     position: relative;
-    width: 100%;
-    max-width: 800px;
-    height: auto;
-    border: 1px solid #ddd;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    border-left: 5px solid transparent;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  
+  .kpi-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
   }
 
-  .chart-container img {
-    width: 100%;
-    height: auto;
-    border-radius: 8px;
+  .kpi-card.primary { border-color: #2e7d32; }
+  .kpi-card.info { border-color: #0288d1; }
+  .kpi-card.warning { border-color: #fbc02d; }
+  .kpi-card.danger { border-color: #d32f2f; }
+
+  .kpi-icon {
+    position: absolute;
+    right: -10px;
+    bottom: -10px;
+    font-size: 5rem;
+    opacity: 0.1;
+    transform: rotate(-15deg);
   }
 
-  /* Totals Section */
-  #total-mensual,
-  #total-diario,
-  #total-hoja-verde,
-  #total-hoja-verde {
-    width: 100%;
-    max-width: 100%;
-    text-align: center;
-    margin-top: 10px;
-    font-family: Arial, Helvetica, sans-serif;
+  .kpi-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #37474f;
   }
 
-  .total-highlight {
-    font-size: 16px;
-    font-weight: bold;
-    color: #dc3545;
-    /* Rojo */
-    text-align: center;
-    margin-top: 15px;
+  .kpi-label {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #78909c;
+    font-weight: 600;
   }
 
-  /* Styled Pesajes */
-  .styled-pesajes {
-    font-family: Arial, sans-serif;
-    font-size: 18px;
-    line-height: 1.6;
-    margin-top: 10px;
-    color: #f60909;
-    /* Rojo */
-  }
-
-  .pesaje-item {
+  /* Listas Estilizadas */
+  .stat-list-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 10px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    padding: 12px;
     margin-bottom: 8px;
-    background-color: #f9f9f9;
-    transition: all 0.3s ease;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid #cfd8dc;
   }
 
-  .pesaje-item:hover {
-    background-color: #e6f7ff;
-    /* Azul claro */
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  .stat-list-item:hover {
+    background-color: #e8f5e9;
+    border-left-color: #2e7d32;
   }
 
-  .pesaje-item strong {
-    color: #007bff;
-    /* Azul */
-    font-size: 14px;
+  .stat-val { font-weight: bold; color: #2e7d32; }
+  
+  /* Loading Skeleton Animation */
+  .skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+    color: transparent !important;
+    border-radius: 4px;
+    min-height: 20px;
   }
 
-  .pesaje-item span {
-    font-weight: bold;
-    color: #28a745;
-    /* Verde */
-    font-size: 18px;
-  }
-
-  /* Titles */
-  .card h5 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 20px;
-    color: #333;
-  }
-
-  .display-4 {
-    font-size: 2.5rem;
-    font-weight: bold;
-  }
-
-  #pesaje-actual {
-    font-size: 5rem;
-    font-weight: bold;
-    color: #dc3545;
-    /* Rojo vibrante */
-    text-align: center;
-  }
-
-  /* Responsive Styles */
-  @media (max-width: 768px) {
-    .chart-container {
-      padding: 10px;
-    }
-
-    .card {
-      padding: 15px;
-    }
-
-    .card-body {
-      padding: 10px;
-    }
+  @keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 </style>
-
-
-
 {% endblock %}
 
 {% block content %}
-<div class="dashboard">
-  <h2 class="text-center">Monitor de Pesajes y Rendimiento</h2>
+<div class="row mb-4">
+    <div class="col-12">
+        <h2 class="fw-bold text-dark"><i class="bi bi-bar-chart-line text-success"></i> Monitor de Planta</h2>
+        <p class="text-muted">Visualización en tiempo real del proceso de secado y empaquetado.</p>
+    </div>
+</div>
 
-  <!-- Información del producto y pesaje actual -->
-  <div class="row my-4">
-    <!-- Columna para Producto Actual y Pesaje Actual -->
-    <div class="col-md-8">
-      <div class="row">
-        <div class="col-md-12 mb-3">
-          <div class="card shadow-sm">
-            <div class="card-body text-center">
-              <h5 class="text-primary">Producto Actual:</h5>
-              <p id="producto-actual" class="display-4 text-success">Cargando...</p>
-            </div>
-          </div>
+<!-- KPIs Superiores -->
+<div class="row g-4 mb-5">
+    <!-- Producto Actual -->
+    <div class="col-md-6 col-xl-3">
+        <div class="kpi-card primary shadow-sm">
+            <div class="kpi-label">Producto en Línea</div>
+            <div id="producto-actual" class="kpi-value mt-2 skeleton">Cargando...</div>
+            <i class="bi bi-box-seam kpi-icon text-success"></i>
         </div>
-        <div class="col-md-12 mb-3">
-          <div class="card shadow-sm">
-            <div class="card-body text-center">
-              <h5 class="text-primary">Pesaje Actual:</h5>
-              <p id="pesaje-actual" class="display-4 text-danger">Cargando...</p>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-6 mb-3">
-          <div class="card shadow-sm">
-            <div class="card-body text-center">
-              <h5 class="text-primary">Lote Actual:</h5>
-              <p id="lote-actual" class="display-4 text-info">Cargando...</p>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-6 mb-3">
-          <div class="card shadow-sm">
-            <div class="card-body text-center">
-              <h5 class="text-primary">Bolsa Nro:</h5>
-              <p id="pesaje-id" class="display-4 text-warning">Cargando...</p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     
-
-    <!-- Columna para Total Diario por Producto -->
-    <div class="col-md-4">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5 class="text-center">Total Diario por Producto</h5>
-          <div id="total-diario" class="styled-pesajes">Cargando...</div>
-          
-          <h5 class="text-center">Total Mensual por Producto</h5>
-          <div id="total-mensual" class="styled-pesajes">Cargando...</div>
-          
-          <h5 class="text-center">Total Hoja Verde</h5>
-          <div id="total-hoja-verde" class="styled-hoja-verde">
-            <div class="hoja-verde-item">
-              <span class="label">Ingreso Diario:</span>
-              <span id="hoja-verde-diario" class="value">Cargando...</span>
+    <!-- Pesaje Actual -->
+    <div class="col-md-6 col-xl-3">
+        <div class="kpi-card danger shadow-sm">
+            <div class="kpi-label">Último Pesaje</div>
+            <div class="mt-2 d-flex align-items-baseline">
+                <span id="pesaje-actual" class="kpi-value skeleton">0</span>
+                <span class="ms-2 text-muted fs-5">kg</span>
             </div>
-            <div class="hoja-verde-item">
-              <span class="label">Acumulado Mensual:</span>
-              <span id="hoja-verde-mensual" class="value">Cargando...</span>
+            <i class="bi bi-speedometer kpi-icon text-danger"></i>
+        </div>
+    </div>
+
+    <!-- Lote -->
+    <div class="col-md-6 col-xl-3">
+        <div class="kpi-card info shadow-sm">
+            <div class="kpi-label">Lote Actual</div>
+            <div id="lote-actual" class="kpi-value mt-2 skeleton">---</div>
+            <i class="bi bi-upc-scan kpi-icon text-info"></i>
+        </div>
+    </div>
+
+    <!-- Contador Bolsas -->
+    <div class="col-md-6 col-xl-3">
+        <div class="kpi-card warning shadow-sm">
+            <div class="kpi-label">ID Pesaje / Bolsa</div>
+            <div id="pesaje-id" class="kpi-value mt-2 skeleton">---</div>
+            <i class="bi bi-hash kpi-icon text-warning"></i>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Columna Izquierda: Estadísticas Texto -->
+    <div class="col-lg-4">
+        <!-- Totales Diarios -->
+        <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white border-bottom-0 pt-4">
+                <h5 class="fw-bold"><i class="bi bi-calendar-check text-success me-2"></i>Acumulado Diario</h5>
             </div>
-          </div>
-          <h5 class="text-center">Rendimiento</h5>
-          <div id="Rendimiento" class="styled-pesajes">Cargando...</div>
+            <div class="card-body" id="total-diario">
+                <div class="skeleton p-3 mb-2"></div>
+                <div class="skeleton p-3 mb-2"></div>
+                <div class="skeleton p-3"></div>
+            </div>
         </div>
-      </div>
+    </div>
+    
+    <div class="col-lg-4">
+         <!-- Totales Mensuales -->
+         <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white border-bottom-0 pt-4">
+                <h5 class="fw-bold"><i class="bi bi-calendar3 text-primary me-2"></i>Acumulado Mensual</h5>
+            </div>
+            <div class="card-body" id="total-mensual">
+                <div class="skeleton p-3 mb-2"></div>
+                <div class="skeleton p-3 mb-2"></div>
+                <div class="skeleton p-3"></div>
+            </div>
+        </div>
     </div>
 
+    <div class="col-lg-4">
+        <!-- Hoja Verde y Rendimiento -->
+        <div class="card h-100 shadow-sm border-success">
+           <div class="card-header bg-success text-white pt-3 pb-3">
+               <h5 class="fw-bold mb-0"><i class="bi bi-leaf me-2"></i>Materia Prima (Hoja Verde)</h5>
+           </div>
+           <div class="card-body">
+               <div id="total-hoja-verde">
+                   <div class="skeleton mb-2" style="height: 40px;"></div>
+               </div>
+               <hr>
+               <h6 class="text-muted text-uppercase fw-bold text-center mt-3">Rendimiento Global</h6>
+               <div id="Rendimiento" class="text-center">
+                   <div class="display-6 fw-bold text-success skeleton" style="height: 50px; width: 50%; margin: 0 auto;"></div>
+               </div>
+           </div>
+       </div>
+   </div>
+</div>
 
-  </div>
-
-  {% if 'usuario' in session %}
-  {% if session['rol'] == 'ADMINISTRADOR' %}
-  <div class="row my-4">
-    <div class="col-md-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <!-- <h5>Gráfico de Productos</h5> -->
-          <iframe src="/dash/" style="width: 100%; height: 600px; border: none;"></iframe>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Gráfico del pesaje por hora -->
-  <div class="row my-4">
-    <div class="col-md-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5>Pesajes por Hora</h5>
-          <div id="bokeh-pesajes">
-            <iframe src="/bokeh/pesajes" style="width: 100%; height: 450px; border: none;"></iframe>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Gráfico de rendimiento por empleado -->
-  <!-- <div class="row my-4">
-      <div class="col-md-12">
+<!-- Gráficos -->
+{% if 'usuario' in session and session['rol'] == 'ADMINISTRADOR' %}
+<div class="row mt-5 g-4">
+    <div class="col-lg-8">
         <div class="card shadow-sm">
-          <div class="card-body">
-            <h5>Rendimiento por Empleado</h5>
-            <div id="bokeh-rendimiento">
-              <iframe src="/bokeh/rendimiento" style="width: 100%; height: 450px; border: none;"></iframe>
+            <div class="card-body p-0">
+                <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light rounded-top">
+                    <h5 class="fw-bold m-0 text-secondary"><i class="bi bi-bar-chart me-2"></i>Pesajes por Hora</h5>
+                    
+                    <!-- Contenedor del Datepicker -->
+                    <div class="d-flex align-items-center bg-white p-1 rounded border shadow-sm">
+                        <label for="fecha-grafico-input" class="me-2 text-muted small fw-bold px-2">Ver Fecha:</label>
+                        <input type="date" id="fecha-grafico-input" class="form-control form-control-sm border-0" style="width: auto; font-weight: 500;">
+                    </div>
+                </div>
+                <div class="ratio ratio-21x9">
+                    <!-- iframe con ID para manipular desde JS -->
+                    <iframe id="iframe-bokeh" src="/bokeh/pesajes" style="border:0;"></iframe>
+                </div>
             </div>
-          </div>
         </div>
-      </div>
     </div>
-</div> -->
-  {% endif %}
-  {% endif %}
-  {% endblock %}
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <iframe src="/dash/" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
-  {% block scripts %}
-  <script>
-    // Función para inicializar la página
+{% endblock %}
+
+{% block scripts %}
+<script>
     document.addEventListener("DOMContentLoaded", function () {
-      // Cargar los datos inicialmente
-      actualizarPesajeYProducto();
+        // Iniciar polling de datos
+        actualizarDatos();
+        setInterval(actualizarDatos, 5000); // Polling cada 5s
 
-      // Actualizar los datos cada 5 segundos
-      setInterval(actualizarPesajeYProducto, 5000);
+        // Lógica para el Datepicker del gráfico de pesajes
+        const dateInput = document.getElementById('fecha-grafico-input');
+        const iframe = document.getElementById('iframe-bokeh');
+
+        if (dateInput && iframe) {
+            // Establecer la fecha de hoy como valor por defecto en formato YYYY-MM-DD
+            // Usamos local date para evitar problemas de zona horaria
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${day}`;
+            
+            dateInput.value = todayStr;
+
+            // Al cambiar la fecha, recargar el iframe con el parámetro query string
+            dateInput.addEventListener('change', function() {
+                const selectedDate = this.value;
+                if(selectedDate) {
+                    // Agregamos un timestamp 't' para evitar que el navegador cachee el iframe antiguo
+                    iframe.src = `/bokeh/pesajes?fecha=${selectedDate}&t=${new Date().getTime()}`;
+                }
+            });
+        }
     });
 
-    // Función para actualizar el pesaje actual y el producto actual con AJAX
-    function actualizarPesajeYProducto() {
-      fetch('/api/datos', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
-        .then(response => response.json())
-        .then(data => {
-          if (data) {
-            // Actualizar los elementos del DOM con los datos del producto, pesaje, lote y pesaje_id
-            document.getElementById("producto-actual").innerText = data.producto_actual || "No disponible";
-            document.getElementById("pesaje-actual").innerText = (data.pesaje_actual || 0) + " kg";
-            document.getElementById("lote-actual").innerText = data.lote_actual || "No disponible";  // Actualiza lote
-            document.getElementById("pesaje-id").innerText = data.pesaje_id || "No disponible";  // Actualiza pesaje_id
+    function actualizarDatos() {
+        // Datos en Tiempo Real
+        fetch('/api/datos')
+            .then(r => r.json())
+            .then(d => {
+                // Una vez recibimos datos, quitamos la clase skeleton visualmente
+                const skeletons = document.querySelectorAll('.skeleton');
+                skeletons.forEach(el => {
+                    // Solo removemos la clase si tiene contenido real para mostrar
+                    if(el.innerText !== "Cargando..." && el.innerText !== "") {
+                        el.classList.remove('skeleton');
+                    }
+                });
 
-            // Llama a la función para actualizar las estadísticas
-            actualizarEstadisticas();
-          } else {
-            console.error("Error: Los datos recibidos están vacíos.");
-          }
-        })
-        .catch(error => console.error('Error al actualizar los datos:', error));
+                updateElement('producto-actual', d.producto_actual);
+                updateElement('pesaje-actual', d.pesaje_actual);
+                updateElement('lote-actual', d.lote_actual);
+                updateElement('pesaje-id', d.pesaje_id);
+                
+                // Trigger actualización estadísticas secundarias
+                actualizarEstadisticas();
+            })
+            .catch(e => console.error("Error API Datos:", e));
     }
 
-    // Función para actualizar estadísticas de pesajes (total diario, mensual y rendimiento)
-function actualizarEstadisticas() {
-  fetch('/api/estadisticas', { method: 'GET', headers: { 'Content-Type': 'application/json' } })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`Error en la respuesta: ${response.statusText}`);
-      }
-      return response.json();
-    })
-    .then(data => {
-      // Total Diario por Producto
-      // console.log(data);
-      const totalDiarioDiv = document.getElementById("total-diario");
-      if (totalDiarioDiv) {
-        let totalDiarioHTML = "";
-        if (data.total_diario && data.total_diario.length > 0) {
-          data.total_diario.forEach(item => {
-            totalDiarioHTML += `
-            <div class="pesaje-item">
-              <strong>${item.producto}:</strong>
-              <span>${item.total_diario} kg</span>
-            </div>`;
-          });
-        } else {
-          totalDiarioHTML = "<p>No hay datos disponibles para el total diario por producto.</p>";
+    function actualizarEstadisticas() {
+        fetch('/api/estadisticas')
+            .then(r => r.json())
+            .then(data => {
+                renderList('total-diario', data.total_diario, 'producto', 'total_diario');
+                renderList('total-mensual', data.total_mensual, 'producto', 'total_mensual');
+                
+                // Hoja Verde
+                const hvDiv = document.getElementById("total-hoja-verde");
+                if(hvDiv) {
+                    hvDiv.innerHTML = `
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Ingreso Diario:</span>
+                            <span class="fw-bold">${formatNum(data.total_hoja_verde_diario)} kg</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>Acumulado Mensual:</span>
+                            <span class="fw-bold text-success">${formatNum(data.total_hoja_verde_mensual)} kg</span>
+                        </div>
+                    `;
+                    hvDiv.classList.remove('skeleton');
+                }
+
+                // Rendimiento
+                const rendDiv = document.getElementById("Rendimiento");
+                if(rendDiv) {
+                    const totalProd = data.total_mensual.reduce((acc, item) => acc + parseFloat(item.total_mensual || 0), 0);
+                    const totalHV = parseFloat(data.total_hoja_verde_mensual || 0);
+                    
+                    // Evitar división por cero
+                    const rend = totalHV > 0 ? ((totalProd / totalHV) * 100).toFixed(2) : "0.00";
+                    
+                    let colorClass = rend > 30 ? 'text-success' : (rend > 20 ? 'text-warning' : 'text-danger');
+                    
+                    rendDiv.innerHTML = `
+                        <div class="display-4 fw-bold ${colorClass}">${rend}%</div>
+                        <small class="text-muted">Prod. Seca / Hoja Verde</small>
+                    `;
+                }
+            })
+            .catch(e => console.error("Error Estadisticas:", e));
+    }
+
+    // Helpers
+    function updateElement(id, val) {
+        const el = document.getElementById(id);
+        if(el) {
+            el.innerText = val;
+            el.classList.remove('skeleton');
         }
-        totalDiarioDiv.innerHTML = totalDiarioHTML;
-      }
+    }
 
-      // Total Mensual por Producto
-      const totalMensualDiv = document.getElementById("total-mensual");
-      if (totalMensualDiv) {
-        let totalMensualHTML = "";
-        if (data.total_mensual && data.total_mensual.length > 0) {
-          data.total_mensual.forEach(item => {
-            totalMensualHTML += `
-            <div class="pesaje-item">
-              <strong>${item.producto}:</strong>
-              <span>${item.total_mensual} kg</span>
-            </div>`;
-          });
-        } else {
-          totalMensualHTML = "<p>No hay datos disponibles para el total mensual por producto.</p>";
-        }
-        totalMensualDiv.innerHTML = totalMensualHTML;
-      }
-
-      // Total Hoja Verde
-      const hojaVerdeDiv = document.getElementById("total-hoja-verde");
-      if (hojaVerdeDiv) {
-        const hojaVerdeDiario = data.total_hoja_verde_diario || 0;
-        const hojaVerdeMensual = data.total_hoja_verde_mensual || 0;
-
-        hojaVerdeDiv.innerHTML = `
-          <div class="pesaje-item">
-            <strong>Ingreso Diario:</strong>
-            <span>${hojaVerdeDiario} kg</span>
-          </div>
-          <div class="pesaje-item">
-            <strong>Acumulado Mensual:</strong>
-            <span>${hojaVerdeMensual} kg</span>
-          </div>`;
-      }
-
-      // Cálculo del rendimiento
-      const rendimientoDiv = document.getElementById("Rendimiento");
-      // console.log(rendimientoDiv);
-      if (rendimientoDiv) {
-        const totalMensual = data.total_mensual.reduce((acc, item) => acc + parseFloat(item.total_mensual || 0), 0);
-        const hojaVerdeMensual = data.total_hoja_verde_mensual || 0;
-        // console.log(totalMensual,hojaVerdeMensual);
+    function renderList(containerId, list, keyLabel, keyValue) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
         
-        // Asegurarse de que no se divida por cero
-        const rendimiento = totalMensual > 0 ? ((totalMensual /hojaVerdeMensual )*100).toFixed(2) : 0;
-        rendimientoDiv.innerHTML = `
-          <div class="pesaje-item">
-            <strong>Rendimiento:</strong>
-            <span>${rendimiento} %</span>
-          </div>`;
-      }
+        // Si no hay lista o está vacía
+        if (!list || list.length === 0) {
+            container.innerHTML = '<div class="text-muted text-center mt-3 small">Sin datos registrados hoy</div>';
+            return;
+        }
 
-      console.log("Estadísticas actualizadas correctamente.");
-    })
-    .catch(error => console.error('Error al actualizar las estadísticas:', error));
-}
+        let html = '';
+        list.forEach(item => {
+            html += `
+            <div class="stat-list-item">
+                <span class="text-dark small text-uppercase fw-semibold" style="font-size: 0.8rem;">${item[keyLabel]}</span>
+                <span class="stat-val">${formatNum(item[keyValue])} kg</span>
+            </div>`;
+        });
+        container.innerHTML = html;
+        container.classList.remove('skeleton');
+    }
 
-
-  </script>
-  {% endblock %}
+    function formatNum(num) {
+        if (num === undefined || num === null) return "0";
+        return new Intl.NumberFormat('es-AR').format(num);
+    }
+</script>
+{% endblock %}

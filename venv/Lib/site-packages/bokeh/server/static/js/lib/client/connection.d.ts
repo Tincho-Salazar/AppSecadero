@@ -25,14 +25,18 @@ export declare class ClientConnection {
     socket: WebSocket | null;
     session: ClientSession | null;
     closed_permanently: boolean;
-    id: string;
+    readonly id: string;
+    protected _reconnection_attempts_left: number;
+    get reconnection_attempts(): number;
     protected _current_handler: ((message: Message<unknown>) => void) | null;
     protected _pending_replies: Map<string, PendingReply>;
     protected _pending_messages: Message<unknown>[];
     protected readonly _receiver: Receiver;
     constructor(url?: string, token?: string, args_string?: string | null);
+    reconnect(): Promise<void>;
     connect(): Promise<ClientSession>;
     close(): void;
+    protected _try_reconnect(force?: boolean): void;
     protected _schedule_reconnect(milliseconds: number): void;
     send(message: Message<unknown>): void;
     send_with_reply<T>(message: Message<unknown>): Promise<Message<T>>;
@@ -40,6 +44,11 @@ export declare class ClientConnection {
     protected _repull_session_doc(resolve: SessionResolver, reject: Rejecter): Promise<void>;
     protected _on_open(resolve: SessionResolver, reject: Rejecter): void;
     protected _on_message(event: MessageEvent): void;
+    /**
+     * The reconnect delay exponentially increases after each attempt. The
+     * first attempt is done immediately.
+     */
+    private _reconnect_delay;
     protected _on_close(event: CloseEvent, reject: Rejecter): void;
     protected _on_error(reject: Rejecter): void;
     protected _close_bad_protocol(detail: string): void;

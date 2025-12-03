@@ -5,4 +5,5 @@ export { DatetimeAxis } from "./datetime_axis";
 export { LinearAxis } from "./linear_axis";
 export { LogAxis } from "./log_axis";
 export { MercatorAxis } from "./mercator_axis";
+export { TimedeltaAxis } from "./timedelta_axis";
 //# sourceMappingURL=index.d.ts.map

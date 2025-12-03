@@ -1,288 +1,256 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file, make_response
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, make_response
 import mysql.connector
+from mysql.connector import pooling
 import pyodbc
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
-import threading
-import numpy as np
+# Bokeh imports
 from bokeh.plotting import figure
 from bokeh.embed import components
 from bokeh.resources import INLINE
-from bokeh.models import ColumnDataSource
-from bokeh.transform import factor_cmap, cumsum
+from bokeh.models import ColumnDataSource, HoverTool
+from bokeh.transform import factor_cmap
 from bokeh.palettes import Spectral11, Category20
-import decimal
-from math import pi
-from reportlab.lib.pagesizes import letter,A4
+# ReportLab imports (PDF)
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-import pandas as pd
 from io import BytesIO
 from collections import defaultdict
-
+# Dash imports
 import dash
 from dash import dcc, html, Input, Output
 import plotly.express as px
 import pandas as pd
 import os
+import contextlib
 
+# --- CONFIGURACIÓN ---
+class Config:
+    # Clave secreta (Mover a variable de entorno en producción real)
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'Datiles2044')
+    
+    # Configuración de Rutas de Plantillas y Estáticos
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    STATIC_FOLDER = os.path.join(BASE_DIR, 'static')
+    TEMPLATE_FOLDER = os.path.join(BASE_DIR, 'templates')
 
-# Inicializar la aplicación Flask
-app = Flask(__name__)
-app.secret_key = 'Datiles2044'  # Cambia esto por una clave secreta
-app._static_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-app._template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+    # Configuración MySQL
+    MYSQL_HOST = os.environ.get('MYSQL_HOST', '192.168.37.114')
+    MYSQL_USER = os.environ.get('MYSQL_USER', 'consultaDB')
+    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'cPindo2024')
+    MYSQL_DB = os.environ.get('MYSQL_DB', 'bolsas')
+    
+    # Configuración SQL Server
+    SQL_SERVER = '192.168.30.5\\prd'
+    SQL_DATABASE = 'SAPINFO'
+    SQL_USER = 'laichi'
+    SQL_PASSWORD = 'datiles2044pera%%%'
 
+# Inicializar Flask
+app = Flask(__name__, static_folder=Config.STATIC_FOLDER, template_folder=Config.TEMPLATE_FOLDER)
+app.config.from_object(Config)
+
+# Inicializar Dash
 dash_app = dash.Dash(__name__, server=app, url_base_pathname='/dash/')
 
-# Variables globales de conexión a la base de datos
-mydb = None
+# --- POOL DE CONEXIONES MYSQL ---
+# Iniciamos el pool una sola vez al arrancar la app
+mysql_pool = None
+try:
+    mysql_pool = mysql.connector.pooling.MySQLConnectionPool(
+        pool_name="mypool",
+        pool_size=10,
+        pool_reset_session=True,
+        host=Config.MYSQL_HOST,
+        user=Config.MYSQL_USER,
+        password=Config.MYSQL_PASSWORD,
+        database=Config.MYSQL_DB,
+        connection_timeout=15,
+        charset='utf8mb4',
+        collation='utf8mb4_general_ci' # Corrección para compatibilidad con MySQL 5.7/MariaDB
+    )
+    print("Pool de conexiones MySQL iniciado correctamente.")
+except Exception as e:
+    print(f"Error CRÍTICO al iniciar Pool MySQL: {e}")
 
+# --- GESTORES DE CONTEXTO Y AYUDANTES DB ---
 
-def connect_to_sql_server():
-    db_config = {
-        'server': '192.168.30.5\\prd',
-        'database': 'SAPINFO',
-        'username': 'laichi',
-        'password': 'datiles2044pera%%%'
-    }
+@contextlib.contextmanager
+def get_mysql_connection():
+    """Obtiene una conexión del pool y asegura su cierre (retorno al pool)."""
+    if not mysql_pool:
+        raise Exception("El pool de MySQL no está disponible.")
+    connection = mysql_pool.get_connection()
+    try:
+        yield connection
+    finally:
+        connection.close()
 
+def execute_query(query, params=None, fetchone=False, commit=False):
+    """Ejecuta una consulta MySQL de manera segura."""
+    try:
+        with get_mysql_connection() as connection:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query, params or ())
+            
+            if commit:
+                connection.commit()
+                result = None # Operaciones de escritura no retornan filas usualmente
+            else:
+                result = cursor.fetchone() if fetchone else cursor.fetchall()
+            
+            cursor.close()
+            return result
+    except mysql.connector.Error as err:
+        print(f"Error MySQL en query: {query}. Error: {err}")
+        return None
+    except Exception as e:
+        print(f"Error general en DB: {e}")
+        return None
+
+def get_sql_server_connection():
+    """Conecta a SQL Server via ODBC."""
     conn_str = (
         f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-        f"SERVER={db_config['server']};"
-        f"DATABASE={db_config['database']};"
-        f"UID={db_config['username']};"
-        f"PWD={db_config['password']};"
+        f"SERVER={Config.SQL_SERVER};"
+        f"DATABASE={Config.SQL_DATABASE};"
+        f"UID={Config.SQL_USER};"
+        f"PWD={Config.SQL_PASSWORD};"
         "Encrypt=yes;"
         "TrustServerCertificate=yes;"
     )
-
     return pyodbc.connect(conn_str)
-#Lectura de los datos de Yerba entrada desde Sql Server
+
 def get_peso_total_hoja_verde():
+    """Obtiene datos de Hoja Verde desde SQL Server."""
     try:
-        conn = connect_to_sql_server()
+        conn = get_sql_server_connection()
         cursor = conn.cursor()
 
-        # Consulta diaria para "Hoja Verde"
-        query_hoja_verde_diario = """
-            SELECT SUM(pesoneto - pesotara) AS total_hoja_verde_diario
-            FROM ZTPESAJES
+        # Hoja Verde Diario
+        cursor.execute("""
+            SELECT SUM(pesoneto - pesotara) 
+            FROM ZTPESAJES 
             WHERE CONVERT(DATE, LEFT(Fechaentrada, 8), 112) = CONVERT(DATE, GETDATE(), 112)
-        """
-        cursor.execute(query_hoja_verde_diario)
-        hoja_verde_diario_result = cursor.fetchone()
-        hoja_verde_diario = hoja_verde_diario_result[0] if hoja_verde_diario_result and hoja_verde_diario_result[0] else 0
+        """)
+        row_diario = cursor.fetchone()
+        diario = row_diario[0] if row_diario and row_diario[0] else 0
 
-        # Consulta mensual para "Hoja Verde"
-        query_hoja_verde_mensual = """
-            SELECT SUM(pesoneto - pesotara) AS total_hoja_verde_mensual
-            FROM ZTPESAJES
+        # Hoja Verde Mensual
+        cursor.execute("""
+            SELECT SUM(pesoneto - pesotara) 
+            FROM ZTPESAJES 
             WHERE MONTH(CONVERT(DATE, LEFT(Fechaentrada, 8), 112)) = MONTH(GETDATE())
               AND YEAR(CONVERT(DATE, LEFT(Fechaentrada, 8), 112)) = YEAR(GETDATE())
-        """
-        cursor.execute(query_hoja_verde_mensual)
-        hoja_verde_mensual_result = cursor.fetchone()
-        hoja_verde_mensual = hoja_verde_mensual_result[0] if hoja_verde_mensual_result and hoja_verde_mensual_result[0] else 0
+        """)
+        row_mensual = cursor.fetchone()
+        mensual = row_mensual[0] if row_mensual and row_mensual[0] else 0
 
-        return {
-            "total_hoja_verde_diario": hoja_verde_diario,
-            "total_hoja_verde_mensual": hoja_verde_mensual
-        }
+        conn.close()
+        return {"total_hoja_verde_diario": diario, "total_hoja_verde_mensual": mensual}
 
     except Exception as e:
-        print(f"Error al obtener los datos de Hoja Verde: {e}")
-        return {
-            "total_hoja_verde_diario": 0,
-            "total_hoja_verde_mensual": 0
-        }
-    finally:
-        conn.close()
+        print(f"Error conectando a SQL Server: {e}")
+        return {"total_hoja_verde_diario": 0, "total_hoja_verde_mensual": 0}
 
+# --- DECORADORES DE SEGURIDAD ---
 
-
-
-# Función para conectar a la base de datos MySQL sin pooling
-def connect_to_db():
-    try:
-        connection = mysql.connector.connect(
-            host="192.168.37.114",
-            user="consultaDB",
-            password="cPindo2024",
-            database="bolsas",  # Asegúrate de que este sea el nombre correcto de la base de datos
-            autocommit=True,
-            charset="utf8mb4",
-            collation="utf8mb4_general_ci",
-            connection_timeout=28800  # Timeout de conexión
-        )
-        if connection.is_connected():
-            # print("Conexión exitosa a la base de datos")
-            return connection
-    except mysql.connector.Error as e:
-        print(f"Error al conectar a la base de datos: {e}")
-        return None
-
-# Función para ejecutar consultas SQL
-def execute_query(connection, query, params=None, fetchone=False, commit=False):
-    try:
-        if connection is None or not connection.is_connected():
-            print("Error: La conexión es None o no está activa. No se puede ejecutar la consulta.")
-            return None
-
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(query, params or ())  # Cambiado para usar params como tupla vacía si es None
-        if commit:
-            connection.commit()
-        result = cursor.fetchone() if fetchone else cursor.fetchall()
-        return result
-    except mysql.connector.Error as err:
-        print("Error MySQL:", err)
-        if commit:
-            connection.rollback()
-        return None
-    finally:
-        cursor.close()  # Asegurarse de cerrar el cursor aquí
-
-        
-# Función para reconectar con varios intentos
-def connect_with_retry(retries=5, delay=5):
-    for _ in range(retries):
-        connection = connect_to_db()
-        if connection:
-            return connection
-        print(f"Reintentando conexión en {delay} segundos...")
-        time.sleep(delay)
-    print("No se pudo conectar a la base de datos después de varios intentos.")
-    return None
-
-# Función para mantener la conexión activa (Keep-Alive)
-def keep_connection_alive(connection, interval=60):
-    while True:
-        try:
-            if not connection or not connection.is_connected():
-                print("Conexión perdida. Intentando reconectar...")
-                connection = connect_with_retry()
-            else:
-                connection.ping(reconnect=True, attempts=3, delay=5)
-                # print("Conexión verificada y activa.")
-        except mysql.connector.Error as e:
-            print(f"Error en keep-alive: {e}")
-            connection = connect_with_retry()
-        time.sleep(interval)
-
-    try:
-        if connection is None or not connection.is_connected():
-            print("Error: La conexión es None o no está activa. No se puede ejecutar la consulta.")
-            return None
-
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute(query, params)
-        if commit:
-            connection.commit()
-        result = cursor.fetchone() if fetchone else cursor.fetchall()
-        cursor.close()
-        return result
-    except mysql.connector.Error as err:
-        print("Error MySQL:", err)
-        if commit:
-            connection.rollback()
-        return None
-
-# Iniciar conexión y keep-alive
-mydb = connect_with_retry()
-if mydb:
-    keep_alive_thread = threading.Thread(target=keep_connection_alive, args=(mydb,))
-    keep_alive_thread.daemon = True
-    keep_alive_thread.start()
-
-# Decorador para verificar si el usuario está autenticado
 def login_required(f):
+    from functools import wraps
+    @wraps(f)
     def wrap(*args, **kwargs):
         if 'usuario' not in session:
             flash("Por favor, inicia sesión primero", "danger")
             return redirect(url_for('login'))
         return f(*args, **kwargs)
-    wrap.__name__ = f.__name__
     return wrap
 
-# Decorador para verificar si el usuario es ADMINISTRADOR
 def admin_required(f):
+    from functools import wraps
+    @wraps(f)
     def wrap(*args, **kwargs):
         if session.get('rol') != 'ADMINISTRADOR':
             flash("Acceso denegado. Debes ser ADMINISTRADOR", "danger")
             return redirect(url_for('index'))
         return f(*args, **kwargs)
-    wrap.__name__ = f.__name__
     return wrap
 
-# Ruta principal
+# --- RUTAS PRINCIPALES ---
+
 @app.route('/')
 @login_required
 def index():
     return render_template('index.html')
 
-# Ruta para login
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         usuario = request.form['usuario']
         contrasena = request.form['contrasena']
-        connection = connect_to_db()
+        
+        user_data = execute_query("SELECT * FROM usuarios WHERE usuario = %s", (usuario,), fetchone=True)
 
-        query = "SELECT * FROM usuarios WHERE usuario = %s"
-        resultado = execute_query(connection, query, (usuario,), fetchone=True)
-
-        if resultado and check_password_hash(resultado['contrasena'], contrasena):
-            session['usuario'] = resultado['usuario']
-            session['rol'] = resultado['rol']
+        if user_data and check_password_hash(user_data['contrasena'], contrasena):
+            session['usuario'] = user_data['usuario']
+            session['rol'] = user_data['rol']
             return jsonify({'status': 'success', 'redirect': url_for('index')})
         else:
             return jsonify({'status': 'error', 'message': 'Usuario o contraseña incorrectos'})
 
     return render_template('login.html')
 
-# Ruta para CRUD de usuarios (solo ADMINISTRADOR)
+@app.route('/logout')
+@login_required
+def logout():
+    session.clear()
+    flash("Has cerrado sesión con éxito", "success")
+    return redirect(url_for('login'))
+
+@app.route('/admin/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        new_username = request.form['new_usuario']
+        new_password = request.form['new_contrasena']
+        
+        # Verificar existencia
+        existing = execute_query("SELECT COUNT(*) as count FROM usuarios WHERE usuario = %s", (new_username,), fetchone=True)
+        if existing and existing['count'] > 0:
+            return jsonify({"message": "El nombre de usuario ya está registrado."})
+
+        hashed_password = generate_password_hash(new_password, method='pbkdf2:sha256')
+        execute_query(
+            "INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, %s)",
+            (new_username, hashed_password, 'USUARIO'),
+            commit=True
+        )
+        return jsonify({"message": "Registro exitoso"}), 200
+
+    return render_template('register.html') # Asegúrate de tener este archivo o usar login.html con opción de registro
+
+# --- CRUD USUARIOS ---
+
 @app.route('/admin/usuarios', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def gestionar_usuarios():
-    connection = connect_to_db()
-    if not connection:
-        flash("No se pudo conectar a la base de datos", "danger")
-        return render_template('usuario.html', usuarios=[])
-    
-    query = "SELECT * FROM usuarios"
-    usuarios = execute_query(connection, query)
-    
-    if not usuarios:
-        print("No se encontraron usuarios en la base de datos.")  # Agrega esta línea para verificar
-    else:
-        print("Usuarios encontrados:", usuarios)  # Imprime los usuarios encontrados
-
+    usuarios = execute_query("SELECT * FROM usuarios") or []
     return render_template('usuario.html', usuarios=usuarios)
-
-# Eliminacion de usuarios
-@app.route('/eliminar_usuario/<int:id>', methods=['DELETE'])
-def eliminar_usuario(id):
-    sql = 'DELETE FROM usuarios WHERE id = %s'
-    val = (id,)
-    execute_query(mydb, sql, params=val, commit=True)
-
-    return jsonify({'message': 'Usuario eliminado exitosamente'})
 
 @app.route('/crear_usuario', methods=['POST'])
 def crear_usuario():
+    # Nota: Idealmente proteger esta ruta con @admin_required si es para uso interno
     usuario = request.form['usuario']
     contrasena = request.form['contrasena']
     rol = request.form['rol']
-
-    hashed_password = generate_password_hash(contrasena, method='pbkdf2:sha256')
+    hashed = generate_password_hash(contrasena, method='pbkdf2:sha256')
     
-    sql = 'INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, %s)'
-    val = (usuario, hashed_password, rol)
-    execute_query(mydb, sql, params=val, commit=True)
-    
+    execute_query(
+        "INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, %s)",
+        (usuario, hashed, rol),
+        commit=True
+    )
     return jsonify({'message': 'Usuario creado exitosamente'})
 
 @app.route('/editar_usuario/<int:id>', methods=['POST'])
@@ -290,633 +258,431 @@ def editar_usuario(id):
     usuario = request.form['usuario']
     contrasena = request.form['contrasena']
     rol = request.form['rol']
-
-    hashed_password = generate_password_hash(contrasena, method='pbkdf2:sha256')
+    hashed = generate_password_hash(contrasena, method='pbkdf2:sha256')
     
-    sql = 'UPDATE usuarios SET usuario = %s, contrasena = %s, rol = %s WHERE id = %s'
-    val = (usuario, hashed_password, rol, id)
-    execute_query(mydb, sql, params=val, commit=True)
-    
+    execute_query(
+        "UPDATE usuarios SET usuario = %s, contrasena = %s, rol = %s WHERE id = %s",
+        (usuario, hashed, rol, id),
+        commit=True
+    )
     return jsonify({'message': 'Usuario actualizado exitosamente'})
 
-# Ruta para CRUD de empleados (solo ADMINISTRADOR)
+@app.route('/eliminar_usuario/<int:id>', methods=['DELETE'])
+def eliminar_usuario(id):
+    execute_query("DELETE FROM usuarios WHERE id = %s", (id,), commit=True)
+    return jsonify({'message': 'Usuario eliminado exitosamente'})
+
+# --- CRUD EMPLEADOS ---
+
 @app.route('/admin/empleados', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def gestionar_empleados():
-    connection = connect_to_db()
-    if not connection:
-        flash("No se pudo conectar a la base de datos", "danger")
-        return render_template('empleado.html', empleados=[])
-    
-    query = "SELECT * FROM empleados"
-    empleados = execute_query(connection, query)
-    
-    if not empleados:
-        print("No se encontraron empleados en la base de datos.")  # Agrega esta línea para verificar
-    else:
-        print("empleados encontrados:", empleados)  # Imprime los empleados encontrados
-
+    empleados = execute_query("SELECT * FROM empleados") or []
     return render_template('empleado.html', empleados=empleados)
-
-# Eliminacion de empleados
-@app.route('/eliminar_empleado/<int:id>', methods=['DELETE'])
-def eliminar_empleado(id):
-    sql = 'DELETE FROM empleados WHERE id = %s'
-    val = (id,)
-    execute_query(mydb, sql, params=val, commit=True)
-
-    return jsonify({'message': 'empleado eliminado exitosamente'})
 
 @app.route('/crear_empleado', methods=['POST'])
 def crear_empleado():
-    nombre = request.form['empleado']  # Cambia 'empleado' por 'nombre'
-    puesto = request.form['rol']       # Cambia 'rol' por 'puesto'
-
-    sql = 'INSERT INTO empleados (nombre, puesto) VALUES (%s, %s)'
-    val = (nombre, puesto)  # Solo usa nombre y puesto, elimina hashed_password
-    execute_query(mydb, sql, params=val, commit=True)
-
+    nombre = request.form['empleado']
+    puesto = request.form['rol']
+    execute_query(
+        "INSERT INTO empleados (nombre, puesto) VALUES (%s, %s)",
+        (nombre, puesto),
+        commit=True
+    )
     return jsonify({'message': 'Empleado creado exitosamente'})
 
 @app.route('/editar_empleado/<int:id>', methods=['POST'])
 def editar_empleado(id):
-    nombre = request.form['empleado']  # Cambia 'empleado' por 'nombre'
-    puesto = request.form['rol']       # Cambia 'rol' por 'puesto'
-
-    sql = 'UPDATE empleados SET nombre = %s, puesto = %s WHERE id = %s'
-    val = (nombre, puesto, id)
-    execute_query(mydb, sql, params=val, commit=True)
-
+    nombre = request.form['empleado']
+    puesto = request.form['rol']
+    execute_query(
+        "UPDATE empleados SET nombre = %s, puesto = %s WHERE id = %s",
+        (nombre, puesto, id),
+        commit=True
+    )
     return jsonify({'message': 'Empleado actualizado exitosamente'})
 
+@app.route('/eliminar_empleado/<int:id>', methods=['DELETE'])
+def eliminar_empleado(id):
+    execute_query("DELETE FROM empleados WHERE id = %s", (id,), commit=True)
+    return jsonify({'message': 'Empleado eliminado exitosamente'})
 
+# --- CRUD PRODUCTOS ---
 
-# Ruta para CRUD de productos (solo ADMINISTRADOR)
 @app.route('/admin/productos', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def gestionar_productos():
-    connection = connect_to_db()
-    if not connection:
-        flash("No se pudo conectar a la base de datos", "danger")
-        return render_template('productos.html', productos=[])
-    
-    query = "SELECT * FROM productos"
-    productos = execute_query(connection, query)
-    
-    if not productos:
-        print("No se encontraron productos en la base de datos.")
-    else:
-        print("Productos encontrados:", productos)
-
+    productos = execute_query("SELECT * FROM productos") or []
     return render_template('productos.html', productos=productos)
 
-# Crear nuevo producto
 @app.route('/crear_producto', methods=['POST'])
 @login_required
 @admin_required
 def crear_producto():
     nombre = request.form['nombre']
     calidad = request.form['calidad']
-    descripcion = request.form['descripcion']  # Nuevo campo descripción
-
-    sql = 'INSERT INTO productos (nombre_producto, calidad, descripcion) VALUES (%s, %s, %s)'
-    val = (nombre, calidad, descripcion)
-    execute_query(mydb, sql, params=val, commit=True)
+    descripcion = request.form['descripcion']
     
+    execute_query(
+        "INSERT INTO productos (nombre_producto, calidad, descripcion) VALUES (%s, %s, %s)",
+        (nombre, calidad, descripcion),
+        commit=True
+    )
     return jsonify({'message': 'Producto creado exitosamente'})
 
-# Editar producto existente
 @app.route('/editar_producto/<int:id>', methods=['POST'])
 @login_required
 @admin_required
 def editar_producto(id):
     nombre = request.form['nombre']
     calidad = request.form['calidad']
-    descripcion = request.form['descripcion']  # Nuevo campo descripción
-
-    sql = 'UPDATE productos SET nombre_producto = %s, calidad = %s, descripcion = %s WHERE producto_id = %s'
-    val = (nombre, calidad, descripcion, id)
-    execute_query(mydb, sql, params=val, commit=True)
+    descripcion = request.form['descripcion']
     
+    execute_query(
+        "UPDATE productos SET nombre_producto = %s, calidad = %s, descripcion = %s WHERE producto_id = %s",
+        (nombre, calidad, descripcion, id),
+        commit=True
+    )
     return jsonify({'message': 'Producto actualizado exitosamente'})
 
-# Eliminar producto
 @app.route('/eliminar_producto/<int:id>', methods=['DELETE'])
 @login_required
 @admin_required
 def eliminar_producto(id):
-    sql = 'DELETE FROM productos WHERE producto_id = %s'
-    val = (id,)
-    execute_query(mydb, sql, params=val, commit=True)
-
+    execute_query("DELETE FROM productos WHERE producto_id = %s", (id,), commit=True)
     return jsonify({'message': 'Producto eliminado exitosamente'})
 
+# --- REPORTES (JSON y PDF) ---
 
-# Modificaciones para incluir los nuevos datos en el reporte
+def obtener_datos_reporte(fecha_inicio, hora_inicio, fecha_final, hora_final):
+    """Lógica centralizada para la query compleja de reportes."""
+    inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M").strftime('%Y-%m-%d %H:%M:%S')
+    final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M").strftime('%Y-%m-%d %H:%M:%S')
+    
+    query = """
+    WITH intervalos AS (
+        SELECT 
+            p.producto_id,
+            pr.nombre_producto AS producto,
+            DATE(p.fecha_hora) AS fecha,
+            MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
+            MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
+            SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
+            TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
+                        LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
+        FROM pesajes p
+        JOIN productos pr ON p.producto_id = pr.producto_id
+        WHERE p.fecha_hora BETWEEN %s AND %s
+    )
+    SELECT 
+        fecha, producto,
+        MIN(primer_pesaje) AS primer_pesaje,
+        MAX(ultimo_pesaje) AS ultimo_pesaje,
+        TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
+        ROUND(SUM(CASE 
+                    WHEN intervalo_minutos >= 30 THEN 
+                        CASE WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
+                             ELSE FLOOR(intervalo_minutos / 30) * 0.5 END
+                    ELSE 0 END), 1) AS tiempo_muerto_horas,
+        MAX(total_peso) AS total_peso_kg,
+        SUM(MAX(total_peso)) OVER () AS total_general,
+        COUNT(*) AS cantidad_pesajes
+    FROM intervalos
+    WHERE intervalo_minutos IS NOT NULL
+    GROUP BY fecha, producto
+    ORDER BY fecha, producto;
+    """
+    return execute_query(query, (inicio, final))
+
 @app.route('/admin/reportes', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def reportes():
-    connection = connect_to_db()
-    if connection is None:
-        flash("Error al conectar a la base de datos", "danger")
-        return render_template('reportes.html', resultados=[])
-
     if request.method == 'POST':
         try:
             data = request.get_json()
+            if not data: return jsonify({"error": "No se recibieron datos"}), 400
 
-            if not data:
-                return jsonify({"error": "No se recibieron datos"}), 400
+            res = obtener_datos_reporte(
+                data.get('fecha_inicio'), data.get('hora_inicio'),
+                data.get('fecha_final'), data.get('hora_final')
+            ) or []
 
-            fecha_inicio = data.get('fecha_inicio')
-            hora_inicio = data.get('hora_inicio')
-            fecha_final = data.get('fecha_final')
-            hora_final = data.get('hora_final')
-
-            if not fecha_inicio or not fecha_final or not hora_inicio or not hora_final:
-                return jsonify({"error": "Faltan parámetros"}), 400
-
-            inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
-            final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
-
-            inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
-            final_str = final.strftime('%Y-%m-%d %H:%M:%S')
-
-            query = """
-            WITH intervalos AS (
-                SELECT 
-                    p.producto_id,
-                    pr.nombre_producto AS producto,
-                    DATE(p.fecha_hora) AS fecha,
-                    MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
-                    MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
-                    SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
-                    TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
-                                LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
-                FROM 
-                    pesajes p
-                JOIN 
-                    productos pr ON p.producto_id = pr.producto_id
-                WHERE 
-                    p.fecha_hora BETWEEN %s AND %s
-            )
-            SELECT 
-                fecha,
-                producto,
-                MIN(primer_pesaje) AS primer_pesaje,
-                MAX(ultimo_pesaje) AS ultimo_pesaje,
-                TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
-                ROUND(
-                    SUM(
-                        CASE 
-                            WHEN intervalo_minutos >= 30 THEN 
-                                CASE 
-                                    WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
-                                    ELSE FLOOR(intervalo_minutos / 30) * 0.5 
-                                END
-                            ELSE 0 
-                        END
-                    ), 1) AS tiempo_muerto_horas,
-                MAX(total_peso) AS total_peso_kg,
-                SUM(MAX(total_peso)) OVER () AS total_general,
-                COUNT(*) AS cantidad_pesajes
-            FROM 
-                intervalos
-            WHERE 
-                intervalo_minutos IS NOT NULL
-            GROUP BY 
-                fecha, producto
-            ORDER BY 
-                fecha, producto;
-            """
-
-            reportes = execute_query(connection, query, (inicio_str, final_str))
-
+            # Serializar fechas para JSON
             resultados_json = []
-            for row in reportes:
-                
+            for row in res:
                 resultados_json.append({
                     "producto": row['producto'],
-                    "primer_pesaje": row['primer_pesaje'].strftime("%d-%m-%Y %H:%M:%S") ,
-                    "ultimo_pesaje": row['ultimo_pesaje'].strftime("%d-%m-%Y %H:%M:%S") ,
+                    "primer_pesaje": row['primer_pesaje'].strftime("%d-%m-%Y %H:%M:%S"),
+                    "ultimo_pesaje": row['ultimo_pesaje'].strftime("%d-%m-%Y %H:%M:%S"),
                     "cantidad_pesajes": row['cantidad_pesajes'],
                     "horas_totales": row['horas_totales'],
                     "tiempo_muerto_horas": row['tiempo_muerto_horas'],
-                    "total_peso_kg": row['total_peso_kg'],
-                    "total_general": row['total_general']
+                    "total_peso_kg": float(row['total_peso_kg']),
+                    "total_general": float(row['total_general'])
                 })
 
             return jsonify({"resultados": resultados_json})
-
         except Exception as e:
             return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
     return render_template('reportes.html', resultados=[])
 
-
-
-# Ruta para generar el reporte PDF
 @app.route('/admin/reportes/pdf', methods=['GET'])
 @login_required
 @admin_required
 def reportes_pdf():
-    connection = connect_to_db()
-    if connection is None:
-        flash("Error al conectar a la base de datos", "danger")
-        return redirect('/admin/reportes')
+    f_inicio = request.args.get('fecha_inicio')
+    h_inicio = request.args.get('hora_inicio')
+    f_final = request.args.get('fecha_final')
+    h_final = request.args.get('hora_final')
 
-    fecha_inicio = request.args.get('fecha_inicio')
-    hora_inicio = request.args.get('hora_inicio')
-    fecha_final = request.args.get('fecha_final')
-    hora_final = request.args.get('hora_final')
-    print(fecha_inicio)
-    print(fecha_final)
-    
-    # Validar que los parámetros no están vacíos
-    if not fecha_inicio or not hora_inicio or not fecha_final or not hora_final:
+    if not all([f_inicio, h_inicio, f_final, h_final]):
         flash("Los parámetros de fecha y hora son requeridos", "warning")
         return redirect('/admin/reportes')
-    
+
     try:
-        inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M")
-        final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M")
-        inicio_str = inicio.strftime('%Y-%m-%d %H:%M:%S')
-        final_str = final.strftime('%Y-%m-%d %H:%M:%S')
-        desde = inicio.strftime('%d-%m-%Y')
-        hasta = final.strftime('%d-%m-%Y')
+        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final)
         
-        query = """
-            WITH intervalos AS (
-                SELECT 
-                    p.producto_id,
-                    pr.nombre_producto AS producto,
-                    DATE(p.fecha_hora) AS fecha,
-                    MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
-                    MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
-                    SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
-                    TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
-                                LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
-                FROM 
-                    pesajes p
-                JOIN 
-                    productos pr ON p.producto_id = pr.producto_id
-                WHERE 
-                    p.fecha_hora BETWEEN %s AND %s
-            )
-            SELECT 
-                fecha,
-                producto,
-                MIN(primer_pesaje) AS primer_pesaje,
-                MAX(ultimo_pesaje) AS ultimo_pesaje,
-                TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
-                ROUND(
-                    SUM(
-                        CASE 
-                            WHEN intervalo_minutos >= 30 THEN 
-                                CASE 
-                                    WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
-                                    ELSE FLOOR(intervalo_minutos / 30) * 0.5 
-                                END
-                            ELSE 0 
-                        END
-                    ), 1) AS tiempo_muerto_horas,
-                MAX(total_peso) AS total_peso_kg,
-                SUM(MAX(total_peso)) OVER () AS total_general,
-                COUNT(*) AS cantidad_pesajes  -- Nueva columna
-            FROM 
-                intervalos
-            WHERE 
-                intervalo_minutos IS NOT NULL
-            GROUP BY 
-                fecha, producto
-            ORDER BY 
-                fecha, producto;
-        """
-
-        reportes = execute_query(connection, query, (inicio_str, final_str))
-
         if not reportes:
             flash("No hay datos para las fechas seleccionadas", "warning")
             return redirect('/admin/reportes')
 
+        # Generación PDF con ReportLab
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
         width, height = A4
+        
+        desde = datetime.strptime(f_inicio, "%Y-%m-%d").strftime('%d-%m-%Y')
+        hasta = datetime.strptime(f_final, "%Y-%m-%d").strftime('%d-%m-%Y')
 
-        def draw_headers(y_position):
-            """Dibuja los encabezados en cada página con el logo"""
-            logo_path = 'static/png/logo.jpg'
-            try:
+        def draw_headers(y_pos):
+            logo_path = os.path.join(app.static_folder, 'png', 'logo.jpg')
+            if os.path.exists(logo_path):
                 p.drawImage(logo_path, 20, height - 65, width=76, height=50, mask='auto')
-            except Exception as e:
-                print(f"Error al cargar el logo: {e}")
             
-            p.setFont("Helvetica-Bold", 10)
-            """Dibuja los encabezados en cada página"""
             p.setFont("Helvetica-Bold", 10)
             headers = ["Producto", "Primer Pesaje", "Último Pesaje", "Bolsas", "Duración (Hs)", "T. Muerto (Hs)", "Total KG"]
             positions = [20, 170, 250, 320, 370, 440, 530]
             for text, x in zip(headers, positions):
-                p.drawString(x, y_position, text)
-            p.line(20, y_position - 5, width - 20, y_position - 5)
+                p.drawString(x, y_pos, text)
+            p.line(20, y_pos - 5, width - 20, y_pos - 5)
 
-        # Título del reporte
+        # Primera página
         p.setFont("Helvetica", 14)
         p.drawString(100, height - 90, f"Reporte de Pesajes ({desde} al {hasta})")
         p.line(20, height - 110, 580, height - 110)
+        
         y_position = height - 130
         draw_headers(y_position)
         y_position -= 20
         p.setFont("Helvetica", 10)
 
-        # Datos
-        y_position = height - 150
         for row in reportes:
-            producto = row['producto']
-            primer_pesaje = row['primer_pesaje'].strftime('%H:%M:%S')
-            ultimo_pesaje = row['ultimo_pesaje'].strftime('%H:%M:%S')
-            bolsa_pesaje = str(row['cantidad_pesajes'])
-            horas_totales = str(row['horas_totales'])
-            tiempo_muerto_horas = str(row['tiempo_muerto_horas'])
-            total_peso_kg = str(row['total_peso_kg'])
-            # y_position-= 15
-
-            p.drawString(20, y_position, producto)
-            p.drawString(180, y_position, primer_pesaje)
-            p.drawString(260, y_position, ultimo_pesaje)
-            p.drawString(330, y_position, bolsa_pesaje)
-            p.drawString(385, y_position, horas_totales)
-            p.drawString(460, y_position, tiempo_muerto_horas)
-            p.drawString(535, y_position, total_peso_kg)
+            p.drawString(20, y_position, str(row['producto']))
+            p.drawString(180, y_position, row['primer_pesaje'].strftime('%H:%M:%S'))
+            p.drawString(260, y_position, row['ultimo_pesaje'].strftime('%H:%M:%S'))
+            p.drawString(330, y_position, str(row['cantidad_pesajes']))
+            p.drawString(385, y_position, str(row['horas_totales']))
+            p.drawString(460, y_position, str(row['tiempo_muerto_horas']))
+            p.drawString(535, y_position, str(row['total_peso_kg']))
             y_position -= 20
 
             if y_position < 50:
                 p.showPage()
-                p.setFont("Helvetica", 10)
                 y_position = height - 130
                 draw_headers(y_position)
-                p.setFont("Helvetica", 10)
                 y_position -= 20
+                p.setFont("Helvetica", 10)
 
-        # Calcular los totales por producto
-        totales_por_producto = defaultdict(float)
-        for row in reportes:
-            totales_por_producto[row['producto']] += float(row['total_peso_kg'])
         # Total General
-        total_general = reportes[0]['total_general'] if 'total_general' in reportes[0] else 0
+        total_general = reportes[0]['total_general'] if reportes and 'total_general' in reportes[0] else 0
         p.line(20, y_position, 580, y_position)
         y_position -= 20
         p.drawString(420, y_position, "TOTAL GENERAL (KG)")
         p.drawString(530, y_position, f"{total_general:.2f}")
-        y_position-=20
+
+        # Resumen por producto
+        totales_por_producto = defaultdict(float)
+        for row in reportes:
+            totales_por_producto[row['producto']] += float(row['total_peso_kg'])
+        
+        y_position -= 40
         if y_position < 100:
             p.showPage()
-            p.setFont("Helvetica", 10)
-            y_position = height - 130
-            draw_headers(y_position)
-            p.setFont("Helvetica", 10)
-            y_position -= 20
+            y_position = height - 50
 
         p.setFont("Helvetica-Bold", 12)
         p.drawString(20, y_position, "Resumen por Producto")
         p.line(20, y_position - 5, width - 20, y_position - 5)
         y_position -= 20
-
         p.setFont("Helvetica", 10)
-        for producto, total_kg in totales_por_producto.items():
-            p.drawString(20, y_position, producto)
-            p.drawString(530, y_position, f"{total_kg:.2f}")
+
+        for prod, total in totales_por_producto.items():
+            p.drawString(20, y_position, prod)
+            p.drawString(530, y_position, f"{total:.2f}")
             y_position -= 20
 
-            if y_position < 50:
-                p.showPage()
-                p.setFont("Helvetica", 10)
-                y_position = height - 130
-                draw_headers(y_position)
-                p.setFont("Helvetica", 10)
-                y_position -= 20
-
         p.save()
-        pdf = buffer.getvalue()
+        pdf_out = buffer.getvalue()
         buffer.close()
 
-        response = make_response(pdf)
+        response = make_response(pdf_out)
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = 'inline; filename=reportes.pdf'
         return response
-        
-    except ValueError as e:
-        flash(f"Error en formato de fecha/hora: {str(e)}", "danger")
-        return redirect('/admin/reportes')
+
     except Exception as e:
-        flash(f"Error interno: {str(e)}", "danger")
+        flash(f"Error interno generando PDF: {str(e)}", "danger")
         return redirect('/admin/reportes')
 
-# Ruta para cerrar sesión
-@app.route('/logout')
-@login_required
-def logout():
-    session.pop('usuario', None)
-    session.pop('rol', None)
-    flash("Has cerrado sesión con éxito", "success")
-    return redirect(url_for('login'))
+# --- API DE DATOS (Realtime) ---
 
-# Ruta para registrar usuarios
-@app.route('/admin/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        new_username = request.form['new_usuario']
-        new_password = request.form['new_contrasena']
-        hashed_password = generate_password_hash(new_password, method='pbkdf2:sha256')
-        rol = 'USUARIO'
-
-        connection = connect_to_db()
-        if connection is None:
-            flash("Error al conectar a la base de datos", "danger")
-            return redirect(url_for('register'))
-
-        check_user_query = "SELECT COUNT(*) FROM usuarios WHERE usuario = %s"
-        existing_user = execute_query(connection, check_user_query, (new_username,), fetchone=True)
-
-        if existing_user and existing_user['COUNT(*)'] > 0:
-            return jsonify({"message": "nombre de usuario ya está registrado."})
-
-        insert_user_query = "INSERT INTO usuarios (usuario, contrasena, rol) VALUES (%s, %s, %s)"
-        execute_query(connection, insert_user_query, (new_username, hashed_password, rol), commit=True)
-        
-        return jsonify({"message": "Registro exitoso"}), 200
-
-    return render_template('register.html')
-
-# Ruta para la obtención de los datos en tiempo real para actualizar la UI
-# Modificación en la función obtener_datos
 @app.route('/api/datos', methods=['GET'])
 @login_required
 def obtener_datos():
-    connection = connect_to_db()
-    if connection is None:
-        return jsonify({"error": "Error en la conexión a la base de datos"}), 500
+    # 1. Producto Actual
+    actual = execute_query("""
+        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS nombre_producto, 
+               ps.peso, ps.lote, ps.pesaje_id
+        FROM pesajes ps
+        JOIN productos p ON ps.producto_id = p.producto_id
+        ORDER BY ps.fecha_hora DESC LIMIT 1;
+    """, fetchone=True)
 
-    # Consulta para obtener el producto y pesaje actual
-    query_producto_pesaje = """
-        SELECT 
-            CONCAT(p.nombre_producto, ' ', p.calidad) AS nombre_producto, 
-            ps.peso, 
-            ps.lote, 
-            ps.pesaje_id
-        FROM 
-            pesajes ps
-        JOIN 
-            productos p ON ps.producto_id = p.producto_id
-        ORDER BY 
-            ps.fecha_hora DESC
-        LIMIT 1;
-    """
-    resultado = execute_query(connection, query_producto_pesaje, fetchone=True)
-
-    producto_actual = resultado['nombre_producto'] if resultado else "No disponible"
-    pesaje_actual = resultado['peso'] if resultado else 0.0
-    lote_actual = resultado['lote'] if resultado else "No disponible"
-    pesaje_id = resultado['pesaje_id'] if resultado else "No disponible"
-
-    # Consulta para obtener los pesajes por cada 1/2 hora
-    query_pesajes_hora = """
-        SELECT DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:%i') AS tiempo, 
-            COUNT(*) AS total_bolsas FROM (
-            SELECT 
-                fecha_hora,
-                CASE
-                    WHEN MINUTE(fecha_hora) < 30 THEN DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:00')
-                    ELSE DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:30')
-                END AS intervalo
-            FROM pesajes
-            WHERE DATE(fecha_hora) = CURDATE()
+    # 2. Pesajes por Hora
+    query_horas = """
+        SELECT DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:%i') AS tiempo, COUNT(*) AS total_bolsas 
+        FROM (
+            SELECT fecha_hora,
+                CASE WHEN MINUTE(fecha_hora) < 30 THEN DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:00')
+                     ELSE DATE_FORMAT(fecha_hora, '%Y-%m-%d %H:30') END AS intervalo
+            FROM pesajes WHERE DATE(fecha_hora) = CURDATE()
         ) AS subquery
-        GROUP BY intervalo
-        ORDER BY intervalo
+        GROUP BY intervalo ORDER BY intervalo
     """
-    pesajes_por_hora = execute_query(connection, query_pesajes_hora)
-    tiempos = [fila['tiempo'] for fila in pesajes_por_hora] if pesajes_por_hora else []
-    bolsas_hora = [fila['total_bolsas'] for fila in pesajes_por_hora] if pesajes_por_hora else []
+    horas_data = execute_query(query_horas) or []
 
-    # Consulta para obtener el rendimiento por empleado (cantidad de bolsas)
-    query_rendimiento_empleado = """
+    # 3. Rendimiento Empleados
+    query_emp = """
         SELECT e.nombre AS empleado, COUNT(ps.pesaje_id) AS bolsas_producidas
         FROM pesajes ps
         JOIN empleados e ON ps.empleado_id = e.id
         WHERE DATE(ps.fecha_hora) = CURDATE()
-        GROUP BY e.nombre
-        ORDER BY bolsas_producidas DESC
+        GROUP BY e.nombre ORDER BY bolsas_producidas DESC
     """
-    rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)
-    empleados = [fila['empleado'] for fila in rendimiento_empleados] if rendimiento_empleados else []
-    rendimiento = [fila['bolsas_producidas'] for fila in rendimiento_empleados] if rendimiento_empleados else []
+    emp_data = execute_query(query_emp) or []
 
-    # Retornar toda la información como JSON para los gráficos
     return jsonify({
-        "producto_actual": producto_actual,
-        "pesaje_actual": pesaje_actual,
-        "lote_actual": lote_actual,
-        "pesaje_id": pesaje_id,
-        "tiempos": tiempos,
-        "bolsas_por_hora": bolsas_hora,
-        "empleados": empleados,
-        "rendimiento_empleados": rendimiento
-    }), 200
+        "producto_actual": actual['nombre_producto'] if actual else "No disponible",
+        "pesaje_actual": actual['peso'] if actual else 0.0,
+        "lote_actual": actual['lote'] if actual else "No disponible",
+        "pesaje_id": actual['pesaje_id'] if actual else "No disponible",
+        "tiempos": [x['tiempo'] for x in horas_data],
+        "bolsas_por_hora": [x['total_bolsas'] for x in horas_data],
+        "empleados": [x['empleado'] for x in emp_data],
+        "rendimiento_empleados": [x['bolsas_producidas'] for x in emp_data]
+    })
 
-
-
-# Nueva ruta para obtener estadísticas del total diario y mensual por producto
 @app.route('/api/estadisticas', methods=['GET'])
 @login_required
 def obtener_estadisticas():
-    # Obtener datos de SQL Server para "Hoja Verde"
-    hoja_verde_data = get_peso_total_hoja_verde()
+    # Datos externos
+    hoja_verde = get_peso_total_hoja_verde()
 
-    # Obtener datos de MySQL para totales generales
-    connection = connect_to_db()
-    if connection is None:
-        return jsonify({"error": "Error en la conexión a la base de datos MySQL"}), 500
-
-    # Consulta diaria de MySQL
-    query_total_diario = """
+    # Datos MySQL
+    total_diario = execute_query("""
         SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_diario
-        FROM pesajes ps
-        JOIN productos p ON ps.producto_id = p.producto_id
-        WHERE DATE(ps.fecha_hora) = CURDATE()
-        GROUP BY producto
-    """
-    total_diario = execute_query(connection, query_total_diario)
+        FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id
+        WHERE DATE(ps.fecha_hora) = CURDATE() GROUP BY producto
+    """)
 
-    # Consulta mensual de MySQL
-    query_total_mensual = """
+    total_mensual = execute_query("""
         SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual
-        FROM pesajes ps
-        JOIN productos p ON ps.producto_id = p.producto_id
+        FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id
         WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
         GROUP BY producto
-    """
-    total_mensual = execute_query(connection, query_total_mensual)
+    """)
 
-    # Retornar resultados combinados
     return jsonify({
         "total_diario": total_diario,
         "total_mensual": total_mensual,
-        "total_hoja_verde_diario": hoja_verde_data["total_hoja_verde_diario"],
-        "total_hoja_verde_mensual": hoja_verde_data["total_hoja_verde_mensual"]
+        "total_hoja_verde_diario": hoja_verde["total_hoja_verde_diario"],
+        "total_hoja_verde_mensual": hoja_verde["total_hoja_verde_mensual"]
     })
 
-# Ruta para el gráfico de pesajes usando Bokeh
+# --- BOKEH ROUTES ---
+
 @app.route('/bokeh/pesajes')
 @login_required
 def bokeh_pesajes():
-    connection = connect_to_db()
-    query_pesajes_hora = """
-        SELECT 
-            DATE_FORMAT(ps.fecha_hora, '%H:00') AS hora, 
-            SUM(ps.peso) AS total_peso
-        FROM pesajes ps
-        GROUP BY hora
-        ORDER BY hora
-    """
-    pesajes_por_hora = execute_query(connection, query_pesajes_hora)
-    horas = [fila['hora'] for fila in pesajes_por_hora]
-    pesos_hora = [float(fila['total_peso']) for fila in pesajes_por_hora]
+    # Obtener fecha del request (o usar hoy por defecto)
+    fecha_param = request.args.get('fecha')
+    if not fecha_param:
+        fecha_str = date.today().strftime('%Y-%m-%d')
+    else:
+        fecha_str = fecha_param
 
-    source = ColumnDataSource(data=dict(horas=horas, pesos_hora=pesos_hora))
-    p = figure(x_range=horas, height=350, title="Pesajes por Hora", toolbar_location=None, tools="")
-    p.vbar(x='horas', top='pesos_hora', width=0.9, source=source, legend_field="horas",
+    # Consulta filtrada por fecha
+    data = execute_query("""
+        SELECT DATE_FORMAT(fecha_hora, '%H:00') AS hora, SUM(peso) AS total_peso
+        FROM pesajes WHERE DATE(fecha_hora) = %s
+        GROUP BY hora ORDER BY hora
+    """, (fecha_str,)) or []
+    
+    # Manejo de gráfico vacío si no hay datos
+    if not data:
+        mensaje = f"<div class='alert alert-warning text-center m-5'>No hay registros para la fecha: {fecha_str}</div>"
+        return render_template("bokeh_template.html", script="", div=mensaje, resources="", titulo="Sin Datos")
+
+    horas = [d['hora'] for d in data]
+    pesos = [float(d['total_peso']) for d in data]
+
+    source = ColumnDataSource(data=dict(horas=horas, pesos_hora=pesos))
+    
+    # Tooltips para mejor UX
+    hover = HoverTool(tooltips=[("Hora", "@horas"), ("Kg", "@pesos_hora{0.00}")])
+    
+    p = figure(x_range=horas, height=350, title=f"Producción por Hora ({fecha_str})", 
+               toolbar_location=None, tools=[hover])
+    
+    # CORRECCIÓN 1: Eliminamos 'legend_field="horas"' para que no cree la leyenda gigante que tapa el gráfico
+    p.vbar(x='horas', top='pesos_hora', width=0.9, source=source, 
            line_color='white', fill_color=factor_cmap('horas', palette=Spectral11, factors=horas))
-
+    
     p.xgrid.grid_line_color = None
     p.y_range.start = 0
-
+    
+    # CORRECCIÓN 2: Rotamos las etiquetas del eje X a vertical para evitar solapamiento entre horas
+    p.xaxis.major_label_orientation = "vertical"
+    
     script, div = components(p)
     return render_template("bokeh_template.html", script=script, div=div, resources=INLINE.render(), titulo="Gráfico Pesajes")
 
-# Ruta para el gráfico de Rendimiento por Empleado usando Bokeh
 @app.route('/bokeh/rendimiento')
 @login_required
 def bokeh_rendimiento():
-    connection = connect_to_db()
-    query_rendimiento_empleado = """
+    data = execute_query("""
         SELECT e.nombre AS empleado, COUNT(ps.pesaje_id) AS bolsas_producidas
-        FROM pesajes ps
-        JOIN empleados e ON ps.empleado_id = e.id
-        GROUP BY e.nombre
-        ORDER BY bolsas_producidas DESC
-    """
-    rendimiento_empleados = execute_query(connection, query_rendimiento_empleado)
-    empleados = [fila['empleado'] for fila in rendimiento_empleados]
-    bolsas_producidas = [float(fila['bolsas_producidas']) for fila in rendimiento_empleados]
+        FROM pesajes ps JOIN empleados e ON ps.empleado_id = e.id
+        GROUP BY e.nombre ORDER BY bolsas_producidas DESC
+    """) or []
+
+    empleados = [d['empleado'] for d in data]
+    bolsas = [float(d['bolsas_producidas']) for d in data]
     
-    source = ColumnDataSource(data=dict(empleados=empleados, bolsas_producidas=bolsas_producidas))
+    # Manejo seguro de paleta si hay más empleados que colores
+    palette = Category20[20] if len(empleados) > 2 else ["#1f77b4", "#aec7e8"]
+    if len(empleados) > 0 and len(empleados) <= 20:
+        palette = Category20[len(empleados)]
+
+    source = ColumnDataSource(data=dict(empleados=empleados, bolsas_producidas=bolsas))
     p = figure(x_range=empleados, height=350, title="Rendimiento por Empleado", toolbar_location=None, tools="")
+    
     p.vbar(x='empleados', top='bolsas_producidas', width=0.9, source=source, legend_field="empleados",
-           line_color='white', fill_color=factor_cmap('empleados', palette=Category20[len(empleados)], factors=empleados))
+           line_color='white', fill_color=factor_cmap('empleados', palette=palette, factors=empleados))
 
     p.xgrid.grid_line_color = None
     p.y_range.start = 0
@@ -924,31 +690,20 @@ def bokeh_rendimiento():
     script, div = components(p)
     return render_template("bokeh_template.html", script=script, div=div, resources=INLINE.render(), titulo="Gráfico Rendimiento")
 
+# --- DASH APP ---
 
-def get_data():
-    connection = connect_to_db()
-    query_total_mensual = """
-        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, CAST(SUM(ps.peso) AS DOUBLE) AS total_mensual
-        FROM pesajes ps
-        JOIN productos p ON ps.producto_id = p.producto_id
+def get_dash_data():
+    data = execute_query("""
+        SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual
+        FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id
         WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
         GROUP BY producto
-    """
-    total_mensual = execute_query(connection, query_total_mensual)
+    """)
+    if not data: return None, None
+    return [d['producto'] for d in data], [float(d['total_mensual']) for d in data]
 
-    if not total_mensual:
-        print("No se encontraron datos para el gráfico.")
-        return None
-
-    # Convertir nombres de productos y valores a tipo adecuado
-    productos = [fila['producto'] for fila in total_mensual]
-    totales = [float(fila['total_mensual']) for fila in total_mensual]
-
-    return productos, totales
-
-# Definir el layout de la aplicación Dash
 dash_app.layout = html.Div([
-    html.H1("Gráfica de Produccion Mensual por Producto"),
+    html.H1("Gráfica de Produccion Mensual por Producto", style={'textAlign': 'center'}),
     dcc.Dropdown(
         id='grafico-selector',
         options=[
@@ -960,137 +715,48 @@ dash_app.layout = html.Div([
             {'label': 'Gráfico de Area', 'value': 'area'},
             {'label': 'Histograma', 'value': 'histo'},
         ],
-        value='pie',  # Valor predeterminado
+        value='pie',
         clearable=False,
-        style={
-            'width': '50%',
-            'margin': 'auto'
-        }
+        style={'width': '50%', 'margin': 'auto'}
     ),
     dcc.Graph(id='grafico'),
 ])
 
-# Callback para actualizar el gráfico
-@dash_app.callback(
-    Output('grafico', 'figure'),
-    Input('grafico-selector', 'value')
-)
-
+@dash_app.callback(Output('grafico', 'figure'), Input('grafico-selector', 'value'))
 def update_graph(tipo_grafico):
-    productos, totales = get_data()
+    productos, totales = get_dash_data()
     
     if productos is None:
-        return px.pie(title="No hay datos para mostrar")  # Manejo de errores
+        return px.pie(title="No hay datos para mostrar")
 
-    # Crear un DataFrame para facilitar la visualización
     df = pd.DataFrame({'productos': productos, 'totales': totales})
-
-    # Definir la paleta de colores
-    color_sequence = px.colors.qualitative.Set1  # Puedes cambiar la paleta aquí
+    color_sequence = px.colors.qualitative.Set1
 
     if tipo_grafico == 'pie':
-        # Crear un gráfico de torta
         fig = px.pie(df, names='productos', values='totales', title='Total Mensual por Producto',
                      color='productos', color_discrete_sequence=color_sequence)
     elif tipo_grafico == 'bar':
-        # Crear un gráfico de barras
         fig = px.bar(df, x='productos', y='totales', title='Total Mensual por Producto',
                      color='productos', color_discrete_sequence=color_sequence)
     elif tipo_grafico == 'barh':
-        # Crear un gráfico de barras horizontales
         fig = px.bar(df, x='totales', y='productos', orientation='h', title='Total Mensual por Producto',
                      color='productos', color_discrete_sequence=color_sequence)
     elif tipo_grafico == 'scatter':
-        # Crear un gráfico de dispersión
         fig = px.scatter(df, x='productos', y='totales', title='Total Mensual por Producto', size='totales',
                          color='productos', color_discrete_sequence=color_sequence)
     elif tipo_grafico == 'area':
-        # Crear un gráfico de área
         fig = px.area(df, x='productos', y='totales', title='Total Mensual por Producto',
                       color='productos', color_discrete_sequence=color_sequence)
     elif tipo_grafico == 'histo':
-        # Crear un gráfico de histograma
         fig = px.histogram(df, x='totales', title='Total Mensual por Producto',
                            color='productos', color_discrete_sequence=color_sequence)
     elif tipo_grafico == 'linea':
-        # Crear un gráfico de líneas
-        fig = px.line(df, x='productos', y='totales', title='Total Mensual por Producto',
-                      )
-
+        fig = px.line(df, x='productos', y='totales', title='Total Mensual por Producto')
+    
     return fig
 
-
-# Rutina para cargar datos aleatorios cada 5 minutos
-pesajes_generados = 0
-producto_actual = None
-empleado_actual = None
-lote_actual = 1
-
-# Función para cargar datos aleatorios
-def cargar_datos_aleatorios():
-    global pesajes_generados, producto_actual, empleado_actual, lote_actual
-
-    # Intentar reconectar antes de ejecutar cualquier operación de base de datos
-    connection = connect_to_db()  # Cambiado para conectarse cada vez
-    if connection is None:
-        print("Error en la conexión a la base de datos, no se pueden cargar datos.")
-        return
-
-    productos_query = "SELECT producto_id, nombre_producto FROM productos"
-    empleados_query = "SELECT id, nombre FROM empleados"
-    productos = execute_query(connection, productos_query)
-    empleados = execute_query(connection, empleados_query)
-
-    # Verificar si hay productos y empleados en la base de datos
-    if not productos or not empleados:
-        print("No hay productos o empleados cargados en la base de datos.")
-        return
-
-    productos_ids = {prod['producto_id']: prod['nombre_producto'] for prod in productos}
-    empleados_ids = {emp['id']: emp['nombre'] for emp in empleados}
-
-    if producto_actual is None:
-        producto_actual = random.choice(list(productos_ids.keys()))
-    if empleado_actual is None:
-        empleado_actual = random.choice(list(empleados_ids.keys()))
-
-    peso_aleatorio = round(random.uniform(1, 100), 2)
-
-    insert_pesaje_query = """
-        INSERT INTO pesajes (producto_id, peso, lote, empleado_id, fecha_hora)
-        VALUES (%s, %s, %s, %s, NOW())
-    """
-    try:
-        # Insertar los datos aleatorios en la base de datos
-        execute_query(connection, insert_pesaje_query, (producto_actual, peso_aleatorio, lote_actual, empleado_actual), commit=True)
-        pesajes_generados += 1
-
-        # Cambiar de producto y lote cada 250 pesajes
-        if pesajes_generados % 250 == 0:
-            producto_actual = random.choice(list(productos_ids.keys()))
-            empleado_actual = random.choice(list(empleados_ids.keys()))
-            lote_actual += 1
-            print(f"Producto cambiado a {productos_ids[producto_actual]}, nuevo lote: {lote_actual}")
-
-    except mysql.connector.Error as err:
-        print("Error al insertar datos aleatorios:", err)
-
-# Función para iniciar la carga de datos en segundo plano
-def iniciar_carga_datos():
-    while True:
-        # cargar_datos_aleatorios() appsecado.py
-        time.sleep(300)  # Pausar por 5 minutos
-
-# Iniciar el hilo en segundo plano
-# data_thread = threading.Thread(target=iniciar_carga_datos)
-# data_thread.daemon = True  # Hilo en segundo plano que se detiene cuando se cierra la app
-# data_thread.start()
-
-
-
-
-
-
-# Iniciar la app Flask
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Hilo de datos aleatorios REMOVIDO para producción/optimización.
+    # Si lo necesitas para testing, descomenta las líneas correspondientes
+    # en la versión original, pero se recomienda insertar datos manualmente o por script externo.
+    app.run(debug=True, host='0.0.0.0', port=5000)

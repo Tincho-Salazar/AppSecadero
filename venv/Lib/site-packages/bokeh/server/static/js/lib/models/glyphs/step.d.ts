@@ -12,6 +12,7 @@ export declare class StepView extends XYGlyphView {
     visuals: Step.Visuals;
     load_glglyph(): Promise<typeof import("./webgl/step").StepGL>;
     protected _paint(ctx: Context2d, indices: number[], data?: Partial<Step.Data>): void;
+    protected _paint_consecutive(ctx: Context2d, indices: number[], data?: Partial<Step.Data>): void;
     protected _render_xy(ctx: Context2d, drawing: boolean, x: number, y: number): boolean;
     draw_legend_for_index(ctx: Context2d, bbox: Rect, _index: number): void;
 }

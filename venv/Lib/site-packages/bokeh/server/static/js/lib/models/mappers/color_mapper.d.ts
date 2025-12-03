@@ -7,8 +7,8 @@ import type { NDArrayType } from "../../core/util/ndarray";
 export interface RGBAMapper {
     v_compute(xs: Arrayable<number> | NDArrayType<number> | Arrayable<Factor> | NDArrayType<Factor>): RGBAArray;
 }
-export declare function _convert_color(color: Color): uint32;
-export declare function _convert_palette(palette: Color[]): Uint32Array;
+export declare function convert_to_uint32_color(color: Color): uint32;
+export declare function convert_to_uint32_palette(palette: Color[]): Uint32Array;
 export declare namespace ColorMapper {
     type Attrs = p.AttrsOf<Props>;
     type Props = Mapper.Props & {
@@ -28,10 +28,7 @@ export declare abstract class ColorMapper extends Mapper<Color> {
     protected _colors<T>(conv: (c: Color) => T): {
         nan_color: T;
     };
-    protected abstract _v_compute<T>(xs: Arrayable<uint32> | Arrayable<Factor | number | null>, values: Arrayable<T>, palette: Arrayable<T>, colors: {
-        nan_color: T;
-    }): void;
-    protected _v_compute_uint32(xs: Arrayable<uint32> | Arrayable<Factor | number | null>, values: Arrayable<uint32>, palette: Arrayable<uint32>, colors: {
+    protected abstract _v_compute(xs: Arrayable<uint32> | Arrayable<Factor | number | null>, values: Arrayable<uint32>, palette: Arrayable<uint32>, colors: {
         nan_color: uint32;
     }): void;
 }

@@ -6,20 +6,27 @@ export declare const OpaqueIndices: import("../../core/kinds").Kinds.Arrayable<n
 export type OpaqueIndices = typeof OpaqueIndices["__type__"];
 export declare const MultiIndices: import("../../core/kinds").Kinds.Mapping<number, import("../../core/types").Arrayable<number>>;
 export type MultiIndices = typeof MultiIndices["__type__"];
-export type ImageIndex = {
+export declare const ImageIndex: import("../../core/kinds").Kinds.Struct<{
     index: number;
     i: number;
     j: number;
     flat_index: number;
-};
-export type ImageIndices = ImageIndex[];
+}>;
+export type ImageIndex = typeof ImageIndex["__type__"];
+export declare const ImageIndices: import("../../core/kinds").Kinds.List<{
+    index: number;
+    i: number;
+    j: number;
+    flat_index: number;
+}>;
+export type ImageIndices = typeof ImageIndices["__type__"];
 export declare namespace Selection {
     type Attrs = p.AttrsOf<Props>;
     type Props = Model.Props & {
         indices: p.Property<OpaqueIndices>;
         line_indices: p.Property<OpaqueIndices>;
         multiline_indices: p.Property<MultiIndices>;
-        image_indices: p.Property<ImageIndex[]>;
+        image_indices: p.Property<ImageIndices>;
         view: p.Property<GlyphView | null>;
         selected_glyphs: p.Property<Glyph[]>;
     };

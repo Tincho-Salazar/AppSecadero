@@ -14,7 +14,6 @@ export declare class ClientSession {
     constructor(_connection: ClientConnection, document: Document);
     get id(): string;
     handle(message: Message<unknown>): void;
-    notify_connection_lost(): void;
     close(): void;
     _connection_closed(): void;
     request_server_info(): Promise<{

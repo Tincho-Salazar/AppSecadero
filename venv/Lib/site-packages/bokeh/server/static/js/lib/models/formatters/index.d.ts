@@ -7,4 +7,5 @@ export { MercatorTickFormatter } from "./mercator_tick_formatter";
 export { NumeralTickFormatter } from "./numeral_tick_formatter";
 export { PrintfTickFormatter } from "./printf_tick_formatter";
 export { TickFormatter } from "./tick_formatter";
+export { TimedeltaTickFormatter } from "./timedelta_tick_formatter";
 //# sourceMappingURL=index.d.ts.map

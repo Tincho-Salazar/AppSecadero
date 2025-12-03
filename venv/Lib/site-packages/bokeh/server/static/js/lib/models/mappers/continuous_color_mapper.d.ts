@@ -1,5 +1,5 @@
 import { ColorMapper } from "./color_mapper";
-import type { Arrayable, Color } from "../../core/types";
+import type { Arrayable, Color, uint32 } from "../../core/types";
 import type * as p from "../../core/properties";
 import { GlyphRenderer } from "../renderers/glyph_renderer";
 export declare namespace ContinuousColorMapper {
@@ -33,10 +33,10 @@ export declare abstract class ContinuousColorMapper extends ColorMapper {
         min: number;
         max: number;
     };
-    _v_compute<T>(data: Arrayable<number>, values: Arrayable<T>, palette: Arrayable<T>, colors: {
-        nan_color: T;
-        low_color?: T;
-        high_color?: T;
+    _v_compute(data: Arrayable<number>, values: Arrayable<uint32>, palette: Arrayable<uint32>, colors: {
+        nan_color: uint32;
+        low_color?: uint32;
+        high_color?: uint32;
     }): void;
     protected _colors<T>(conv: (c: Color) => T): {
         nan_color: T;

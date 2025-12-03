@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0, as
@@ -77,8 +77,10 @@ PROTOCOL_VERSION = 10
 AUTH_SWITCH_STATUS = 0xFE
 EXCHANGE_FURTHER_STATUS = 0x01
 OK_STATUS = 0x00
+EOF_STATUS = 0xFE
 MFA_STATUS = 0x02
 ERR_STATUS = 0xFF
+LOCAL_INFILE_STATUS = 0xFB
 DEFAULT_CHARSET_ID = 45
 DEFAULT_MAX_ALLOWED_PACKET = 1073741824
 
@@ -222,7 +224,6 @@ class MySQLProtocol:
         auth_data: bytes,
         username: str,
         password: str,
-        client_flags: int,
         auth_plugin: str,
         auth_plugin_class: Optional[str] = None,
         ssl_enabled: bool = False,
@@ -252,7 +253,7 @@ class MySQLProtocol:
         Raises:
             InterfaceError: If authentication fails or when got a NULL auth response.
         """
-        if not password:
+        if not password and auth_plugin == "":
             # return auth response and an arbitrary auth strategy
             return b"\x00", MySQLCachingSHA2PasswordAuthPlugin(
                 username, password, ssl_enabled=ssl_enabled
@@ -275,11 +276,7 @@ class MySQLProtocol:
                 f"plugin {auth_strategy.name}"
             )
 
-        auth_response = (
-            utils.int1store(len(auth_response)) + auth_response
-            if client_flags & ClientFlag.SECURE_CONNECTION
-            else auth_response + b"\x00"
-        )
+        auth_response = utils.lc_int(len(auth_response)) + auth_response
 
         return auth_response, auth_strategy
 
@@ -365,10 +362,10 @@ class MySQLProtocol:
                 )
             )
         else:
-            filler = "x" * 22
+            filler = "x" * 23
             response_payload.append(
                 struct.pack(
-                    f"<IIH{filler}{len(b_username)}sx",
+                    f"<IIB{filler}{len(b_username)}sx",
                     client_flags,
                     max_allowed_packet,
                     charset,
@@ -381,7 +378,6 @@ class MySQLProtocol:
             auth_data=handshake["auth_data"],  # type: ignore[arg-type]
             username=username,
             password=password,
-            client_flags=client_flags,
             auth_plugin=auth_plugin,
             auth_plugin_class=auth_plugin_class,
             ssl_enabled=ssl_enabled,
@@ -434,8 +430,8 @@ class MySQLProtocol:
             [
                 utils.int4store(client_flags),
                 utils.int4store(max_allowed_packet),
-                utils.int2store(charset),
-                b"\x00" * 22,
+                utils.int1store(charset),
+                b"\x00" * 23,
             ]
         )
 
@@ -617,7 +613,11 @@ class MySQLProtocol:
         return res
 
     def read_text_result(
-        self, sock: MySQLSocket, version: Tuple[int, ...], count: int = 1
+        self,
+        sock: MySQLSocket,
+        version: Tuple[int, ...],
+        count: int = 1,
+        read_timeout: Optional[int] = None,
     ) -> Tuple[
         List[Tuple[Optional[bytes], ...]],
         Optional[EofPacketType],
@@ -638,13 +638,13 @@ class MySQLProtocol:
         while True:
             if eof or i == count:
                 break
-            packet = sock.recv()
+            packet = sock.recv(read_timeout)
             if packet.startswith(b"\xff\xff\xff"):
                 datas = [packet[4:]]
-                packet = sock.recv()
+                packet = sock.recv(read_timeout)
                 while packet.startswith(b"\xff\xff\xff"):
                     datas.append(packet[4:])
-                    packet = sock.recv()
+                    packet = sock.recv(read_timeout)
                 datas.append(packet[4:])
                 rowdata = utils.read_lc_string_list(b"".join(datas))
             elif packet[4] == 254 and packet[0] < 7:
@@ -827,6 +827,7 @@ class MySQLProtocol:
         columns: List[DescriptionType],
         count: int = 1,
         charset: str = "utf-8",
+        read_timeout: Optional[int] = None,
     ) -> Tuple[
         List[Tuple[BinaryProtocolType, ...]],
         Optional[EofPacketType],
@@ -844,7 +845,7 @@ class MySQLProtocol:
                 break
             if i == count:
                 break
-            packet = bytes(sock.recv())
+            packet = bytes(sock.recv(read_timeout))
             if packet[4] == 254:
                 eof = self.parse_eof(packet)
                 values = None
@@ -912,7 +913,7 @@ class MySQLProtocol:
 
     @staticmethod
     def prepare_binary_timestamp(
-        value: Union[datetime.date, datetime.datetime]
+        value: Union[datetime.date, datetime.datetime],
     ) -> Tuple[bytes, int]:
         """Prepare a timestamp object for the MySQL binary protocol
 
@@ -955,7 +956,7 @@ class MySQLProtocol:
 
     @staticmethod
     def prepare_binary_time(
-        value: Union[datetime.timedelta, datetime.time]
+        value: Union[datetime.timedelta, datetime.time],
     ) -> Tuple[bytes, int]:
         """Prepare a time object for the MySQL binary protocol
 
