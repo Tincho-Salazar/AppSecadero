@@ -225,7 +225,6 @@ def crear_usuario():
 
 @app.route('/editar_usuario/<int:id>', methods=['POST'])
 def editar_usuario(id):
-    # Nota: Manejar contraseña vacía si no se quiere cambiar
     contrasena = request.form.get('contrasena')
     usuario = request.form['usuario']
     rol = request.form['rol']
@@ -245,7 +244,6 @@ def eliminar_usuario(id):
     execute_query("DELETE FROM usuarios WHERE id=%s", (id,), commit=True)
     return jsonify({'message': 'Usuario eliminado'})
 
-# ... (Rutas de Empleados y Productos se mantienen igual que en tu archivo previo)
 @app.route('/admin/empleados')
 @login_required
 @admin_required
@@ -293,82 +291,50 @@ def eliminar_producto(id):
     return jsonify({'message': 'Producto eliminado'})
 
 # --- REPORTES ---
-@app.route('/admin/reportes', methods=['GET', 'POST'])
-def reportes():
-    if request.method == 'POST':
-        d = request.get_json()
-        f1, h1 = d['fecha_inicio'], d['hora_inicio']
-        f2, h2 = d['fecha_final'], d['hora_final']
-        inicio = f"{f1} {h1}"
-        final = f"{f2} {h2}"
-        
-        q = """
-        WITH intervalos AS (
-            SELECT p.producto_id, pr.nombre_producto AS producto, DATE(p.fecha_hora) AS fecha,
-                MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
-                MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
-                SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
-                TIMESTAMPDIFF(MINUTE, p.fecha_hora, LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
-            FROM pesajes p JOIN productos pr ON p.producto_id = pr.producto_id WHERE p.fecha_hora BETWEEN %s AND %s
-        )
-        SELECT fecha, producto, MIN(primer_pesaje) AS primer_pesaje, MAX(ultimo_pesaje) AS ultimo_pesaje,
-            TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
-            ROUND(SUM(CASE WHEN intervalo_minutos >= 30 THEN (CASE WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos/30)*0.5 ELSE FLOOR(intervalo_minutos/30)*0.5 END) ELSE 0 END), 1) AS tiempo_muerto_horas,
-            MAX(total_peso) AS total_peso_kg, SUM(MAX(total_peso)) OVER () AS total_general, COUNT(*) AS cantidad_pesajes
-        FROM intervalos WHERE intervalo_minutos IS NOT NULL GROUP BY fecha, producto ORDER BY fecha, producto;
-        """
-        res = execute_query(q, (inicio, final)) or []
-        
-        json_out = []
-        for r in res:
-            json_out.append({
-                "producto": r['producto'], "primer_pesaje": r['primer_pesaje'].strftime("%d-%m %H:%M"),
-                "ultimo_pesaje": r['ultimo_pesaje'].strftime("%d-%m %H:%M"), "cantidad_pesajes": r['cantidad_pesajes'],
-                "horas_totales": r['horas_totales'], "tiempo_muerto_horas": r['tiempo_muerto_horas'],
-                "total_peso_kg": float(r['total_peso_kg']), "total_general": float(r['total_general'])
-            })
-        return jsonify({"resultados": json_out})
-    return render_template('reportes.html')
-
 def obtener_datos_reporte(fecha_inicio, hora_inicio, fecha_final, hora_final):
     """Lógica centralizada para la query compleja de reportes."""
-    inicio = datetime.strptime(f"{fecha_inicio} {hora_inicio}", "%Y-%m-%d %H:%M").strftime('%Y-%m-%d %H:%M:%S')
-    final = datetime.strptime(f"{fecha_final} {hora_final}", "%Y-%m-%d %H:%M").strftime('%Y-%m-%d %H:%M:%S')
+    inicio = f"{fecha_inicio} {hora_inicio}"
+    final = f"{fecha_final} {hora_final}"
     
-    query = """
+    q = """
     WITH intervalos AS (
-        SELECT 
-            p.producto_id,
-            pr.nombre_producto AS producto,
-            DATE(p.fecha_hora) AS fecha,
+        SELECT p.producto_id, pr.nombre_producto AS producto, DATE(p.fecha_hora) AS fecha,
             MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
             MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
             SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
-            TIMESTAMPDIFF(MINUTE, p.fecha_hora, 
-                        LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
-        FROM pesajes p
-        JOIN productos pr ON p.producto_id = pr.producto_id
-        WHERE p.fecha_hora BETWEEN %s AND %s
+            TIMESTAMPDIFF(MINUTE, p.fecha_hora, LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
+        FROM pesajes p JOIN productos pr ON p.producto_id = pr.producto_id WHERE p.fecha_hora BETWEEN %s AND %s
     )
-    SELECT 
-        fecha, producto,
-        MIN(primer_pesaje) AS primer_pesaje,
-        MAX(ultimo_pesaje) AS ultimo_pesaje,
+    SELECT fecha, producto, MIN(primer_pesaje) AS primer_pesaje, MAX(ultimo_pesaje) AS ultimo_pesaje,
         TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
-        ROUND(SUM(CASE 
-                    WHEN intervalo_minutos >= 30 THEN 
-                        CASE WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos / 30) * 0.5 
-                             ELSE FLOOR(intervalo_minutos / 30) * 0.5 END
-                    ELSE 0 END), 1) AS tiempo_muerto_horas,
-        MAX(total_peso) AS total_peso_kg,
-        SUM(MAX(total_peso)) OVER () AS total_general,
-        COUNT(*) AS cantidad_pesajes
-    FROM intervalos
-    WHERE intervalo_minutos IS NOT NULL
-    GROUP BY fecha, producto
-    ORDER BY fecha, producto;
+        ROUND(SUM(CASE WHEN intervalo_minutos >= 30 THEN (CASE WHEN intervalo_minutos % 30 >= 15 THEN CEIL(intervalo_minutos/30)*0.5 ELSE FLOOR(intervalo_minutos/30)*0.5 END) ELSE 0 END), 1) AS tiempo_muerto_horas,
+        MAX(total_peso) AS total_peso_kg, SUM(MAX(total_peso)) OVER () AS total_general, COUNT(*) AS cantidad_pesajes
+    FROM intervalos WHERE intervalo_minutos IS NOT NULL GROUP BY fecha, producto ORDER BY fecha, producto;
     """
-    return execute_query(query, (inicio, final))
+    return execute_query(q, (inicio, final))
+
+@app.route('/admin/reportes', methods=['GET', 'POST'])
+def reportes():
+    if request.method == 'POST':
+        try:
+            d = request.get_json()
+            res = obtener_datos_reporte(
+                d['fecha_inicio'], d['hora_inicio'],
+                d['fecha_final'], d['hora_final']
+            ) or []
+            
+            json_out = []
+            for r in res:
+                json_out.append({
+                    "producto": r['producto'], "primer_pesaje": r['primer_pesaje'].strftime("%d-%m %H:%M"),
+                    "ultimo_pesaje": r['ultimo_pesaje'].strftime("%d-%m %H:%M"), "cantidad_pesajes": r['cantidad_pesajes'],
+                    "horas_totales": r['horas_totales'], "tiempo_muerto_horas": r['tiempo_muerto_horas'],
+                    "total_peso_kg": float(r['total_peso_kg']), "total_general": float(r['total_general'])
+                })
+            return jsonify({"resultados": json_out})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return render_template('reportes.html')
 
 @app.route('/admin/reportes/pdf', methods=['GET'])
 @login_required
@@ -380,7 +346,7 @@ def reportes_pdf():
     h_final = request.args.get('hora_final')
 
     if not all([f_inicio, h_inicio, f_final, h_final]):
-        flash("Faltan parámetros de fecha", "warning")
+        flash("Faltan parámetros", "warning")
         return redirect('/admin/reportes')
 
     try:
@@ -444,7 +410,7 @@ def reportes_pdf():
         print(f"Error PDF: {e}")
         return redirect('/admin/reportes')
 
-# --- API y BOKEH (CORREGIDO) ---
+# --- API y BOKEH ---
 @app.route('/api/datos')
 def api_datos():
     act = execute_query("SELECT ps.peso, ps.lote, ps.pesaje_id, CONCAT(p.nombre_producto, ' ', p.calidad) as nom FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id ORDER BY ps.fecha_hora DESC LIMIT 1", fetchone=True)
@@ -477,20 +443,15 @@ def bokeh_pesajes():
     pesos = [float(d['total']) for d in data]
     
     source = ColumnDataSource(data=dict(horas=horas, pesos=pesos))
-    
-    # Tooltip para ver info al pasar mouse
     hover = HoverTool(tooltips=[("Hora", "@horas"), ("Total Kg", "@pesos{0.00}")])
     
     p = figure(x_range=horas, height=350, title=f"Pesajes por Hora ({f})", toolbar_location=None, tools=[hover])
     
-    # COLORES DINÁMICOS: Usamos Spectral11 repetido para cubrir las horas necesarias
-    palette = Spectral11 * 3  # Aseguramos tener suficientes colores
-    
+    palette = Spectral11 * 3
     p.vbar(x='horas', top='pesos', width=0.9, source=source, 
            line_color='white', 
            fill_color=factor_cmap('horas', palette=palette, factors=horas))
            
-    # ETIQUETAS: Orientación vertical para que se lean todas
     p.xaxis.major_label_orientation = "vertical"
     p.y_range.start = 0
     p.xgrid.grid_line_color = None
@@ -498,7 +459,7 @@ def bokeh_pesajes():
     script, div = components(p)
     return render_template("bokeh_template.html", script=script, div=div, resources=INLINE.render(), titulo="Pesajes por Hora")
 
-# --- DASH APP ---
+# --- DASH APP (CON AUTO-REFRESH) ---
 def get_dash_data():
     data = execute_query("""
         SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual
@@ -512,6 +473,8 @@ def get_dash_data():
 dash_app.layout = html.Div([
     html.Div([
         html.H3("Producción Mensual", className="text-center mb-4"),
+        # Intervalo: 60 segundos
+        dcc.Interval(id='intervalo-dash', interval=60*1000, n_intervals=0),
         html.Div([
             dcc.Dropdown(
                 id='grafico-selector',
@@ -529,8 +492,12 @@ dash_app.layout = html.Div([
     ], className="container-fluid py-3")
 ])
 
-@dash_app.callback(Output('grafico', 'figure'), Input('grafico-selector', 'value'))
-def update_graph(tipo):
+@dash_app.callback(
+    Output('grafico', 'figure'),
+    [Input('grafico-selector', 'value'),
+     Input('intervalo-dash', 'n_intervals')]
+)
+def update_graph(tipo, n):
     prods, totals = get_dash_data()
     if not prods: 
         fig = go.Figure()
@@ -554,8 +521,7 @@ def update_graph(tipo):
 
 # --- EJECUCIÓN ---
 if __name__ == '__main__':
-    # SIN SIMULACIÓN (Eliminada según solicitud)
-    
+    # Eliminada simulación para entorno productivo
     if getattr(sys, 'frozen', False):
         print("INICIANDO MODO EJECUTABLE (PRODUCCIÓN)")
         app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)

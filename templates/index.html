@@ -2,7 +2,7 @@
 
 {% block style %}
 <style>
-  /* KPI Cards */
+  /* Estilos de Tarjetas KPI */
   .kpi-card {
     background: #fff;
     border-radius: 15px;
@@ -19,10 +19,11 @@
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
   }
 
-  .kpi-card.primary { border-color: #2e7d32; }
-  .kpi-card.info { border-color: #0288d1; }
-  .kpi-card.warning { border-color: #fbc02d; }
-  .kpi-card.danger { border-color: #d32f2f; }
+  /* Colores de estado */
+  .kpi-card.primary { border-color: #2e7d32; } /* Verde Fuerte */
+  .kpi-card.info { border-color: #0288d1; }    /* Azul */
+  .kpi-card.warning { border-color: #fbc02d; } /* Amarillo */
+  .kpi-card.danger { border-color: #d32f2f; }  /* Rojo */
 
   .kpi-icon {
     position: absolute;
@@ -47,7 +48,7 @@
     font-weight: 600;
   }
 
-  /* Listas Estilizadas */
+  /* Estilos para Listas de Estadísticas */
   .stat-list-item {
     display: flex;
     justify-content: space-between;
@@ -66,7 +67,7 @@
 
   .stat-val { font-weight: bold; color: #2e7d32; }
   
-  /* Loading Skeleton Animation */
+  /* Animación de Carga (Skeleton) */
   .skeleton {
     background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
     background-size: 200% 100%;
@@ -91,7 +92,7 @@
     </div>
 </div>
 
-<!-- KPIs Superiores -->
+<!-- Sección 1: KPIs Superiores (Tiempo Real) -->
 <div class="row g-4 mb-5">
     <!-- Producto Actual -->
     <div class="col-md-6 col-xl-3">
@@ -123,7 +124,7 @@
         </div>
     </div>
 
-    <!-- Contador Bolsas -->
+    <!-- Contador ID Pesaje -->
     <div class="col-md-6 col-xl-3">
         <div class="kpi-card warning shadow-sm">
             <div class="kpi-label">ID Pesaje / Bolsa</div>
@@ -133,15 +134,16 @@
     </div>
 </div>
 
+<!-- Sección 2: Estadísticas de Texto -->
 <div class="row g-4">
-    <!-- Columna Izquierda: Estadísticas Texto -->
+    <!-- Columna Izquierda: Totales Diarios -->
     <div class="col-lg-4">
-        <!-- Totales Diarios -->
         <div class="card h-100 shadow-sm">
             <div class="card-header bg-white border-bottom-0 pt-4">
                 <h5 class="fw-bold"><i class="bi bi-calendar-check text-success me-2"></i>Acumulado Diario</h5>
             </div>
             <div class="card-body" id="total-diario">
+                <!-- Skeletons iniciales -->
                 <div class="skeleton p-3 mb-2"></div>
                 <div class="skeleton p-3 mb-2"></div>
                 <div class="skeleton p-3"></div>
@@ -149,8 +151,8 @@
         </div>
     </div>
     
+    <!-- Columna Central: Totales Mensuales -->
     <div class="col-lg-4">
-         <!-- Totales Mensuales -->
          <div class="card h-100 shadow-sm">
             <div class="card-header bg-white border-bottom-0 pt-4">
                 <h5 class="fw-bold"><i class="bi bi-calendar3 text-primary me-2"></i>Acumulado Mensual</h5>
@@ -163,8 +165,8 @@
         </div>
     </div>
 
+    <!-- Columna Derecha: Hoja Verde y Rendimiento -->
     <div class="col-lg-4">
-        <!-- Hoja Verde y Rendimiento -->
         <div class="card h-100 shadow-sm border-success">
            <div class="card-header bg-success text-white pt-3 pb-3">
                <h5 class="fw-bold mb-0"><i class="bi bi-leaf me-2"></i>Materia Prima (Hoja Verde)</h5>
@@ -183,19 +185,22 @@
    </div>
 </div>
 
-<!-- Gráficos -->
+<!-- Sección 3: Gráficos (Solo para Admin) -->
 {% if 'usuario' in session and session['rol'] == 'ADMINISTRADOR' %}
 <div class="row mt-5 g-4">
+    <!-- Gráfico Bokeh: Pesajes por Hora -->
     <div class="col-lg-8">
         <div class="card shadow-sm">
             <div class="card-body p-0">
                 <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light rounded-top">
                     <h5 class="fw-bold m-0 text-secondary"><i class="bi bi-bar-chart me-2"></i>Pesajes por Hora</h5>
                     
-                    <!-- Contenedor del Datepicker -->
+                    <!-- Contenedor del Datepicker e Indicador -->
                     <div class="d-flex align-items-center bg-white p-1 rounded border shadow-sm">
                         <label for="fecha-grafico-input" class="me-2 text-muted small fw-bold px-2">Ver Fecha:</label>
                         <input type="date" id="fecha-grafico-input" class="form-control form-control-sm border-0" style="width: auto; font-weight: 500;">
+                        <!-- Indicador visual de actualización en tiempo real -->
+                        <span id="live-indicator" class="badge bg-success ms-2 d-none animate__animated animate__pulse animate__infinite">EN VIVO</span>
                     </div>
                 </div>
                 <div class="ratio ratio-21x9">
@@ -205,6 +210,8 @@
             </div>
         </div>
     </div>
+    
+    <!-- Gráfico Dash: Producción Mensual -->
     <div class="col-lg-4">
         <div class="card shadow-sm h-100">
             <div class="card-body">
@@ -219,70 +226,117 @@
 
 {% block scripts %}
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        // Iniciar polling de datos
-        actualizarDatos();
-        setInterval(actualizarDatos, 5000); // Polling cada 5s
+    // Variable global para controlar el intervalo de refresco del gráfico de Bokeh
+    let refreshInterval = null;
 
-        // Lógica para el Datepicker del gráfico de pesajes
+    document.addEventListener("DOMContentLoaded", function () {
+        // 1. Iniciar polling de datos numéricos (KPIs y Tablas) - Siempre activo cada 5s
+        actualizarDatos();
+        setInterval(actualizarDatos, 5000); 
+
+        // 2. Lógica Inteligente para el Gráfico de Barras (Bokeh)
         const dateInput = document.getElementById('fecha-grafico-input');
         const iframe = document.getElementById('iframe-bokeh');
+        const liveIndicator = document.getElementById('live-indicator');
 
         if (dateInput && iframe) {
-            // Establecer la fecha de hoy como valor por defecto en formato YYYY-MM-DD
-            // Usamos local date para evitar problemas de zona horaria
+            // Calcular fecha de hoy localmente
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth() + 1).padStart(2, '0');
             const day = String(now.getDate()).padStart(2, '0');
             const todayStr = `${year}-${month}-${day}`;
             
+            // Establecer valor inicial
             dateInput.value = todayStr;
 
-            // Al cambiar la fecha, recargar el iframe con el parámetro query string
-            dateInput.addEventListener('change', function() {
-                const selectedDate = this.value;
-                if(selectedDate) {
-                    // Agregamos un timestamp 't' para evitar que el navegador cachee el iframe antiguo
+            // Función centralizada para gestionar la actualización del gráfico
+            function gestionarActualizacionGrafico() {
+                const selectedDate = dateInput.value;
+                if (!selectedDate) return;
+
+                // A) Cargar el gráfico inmediatamente (con timestamp 't' para evitar caché)
+                try {
+                    // Evitar error en modo vista previa si la URL base no es http/https
+                    if (window.location.protocol === 'blob:' || window.location.protocol === 'file:') return;
                     iframe.src = `/bokeh/pesajes?fecha=${selectedDate}&t=${new Date().getTime()}`;
+                } catch(e) { console.log("Modo preview detectado"); }
+
+                // B) Lógica de Intervalo: 
+                // Solo si la fecha seleccionada es HOY, activamos la recarga automática.
+                if (selectedDate === todayStr) {
+                    if (!refreshInterval) {
+                        console.log("Iniciando auto-refresh de gráfico (Modo EN VIVO)");
+                        refreshInterval = setInterval(() => {
+                            try {
+                                // Recarga silenciosa del iframe
+                                iframe.src = `/bokeh/pesajes?fecha=${todayStr}&t=${new Date().getTime()}`;
+                            } catch(e){}
+                        }, 60000); // 60 segundos
+                    }
+                    // Mostrar indicador visual "EN VIVO"
+                    if(liveIndicator) liveIndicator.classList.remove('d-none');
+                } else {
+                    // Si es una fecha pasada, no necesitamos refrescar
+                    if (refreshInterval) {
+                        console.log("Deteniendo auto-refresh (Fecha Histórica)");
+                        clearInterval(refreshInterval);
+                        refreshInterval = null;
+                    }
+                    // Ocultar indicador visual
+                    if(liveIndicator) liveIndicator.classList.add('d-none');
                 }
-            });
+            }
+
+            // Ejecutar al inicio (carga por defecto hoy)
+            gestionarActualizacionGrafico();
+
+            // Ejecutar cada vez que el usuario cambie la fecha
+            dateInput.addEventListener('change', gestionarActualizacionGrafico);
         }
     });
 
     function actualizarDatos() {
-        // Datos en Tiempo Real
+        // Validación de entorno para evitar errores en consola durante desarrollo/preview
+        try {
+            if (window.location.protocol === 'blob:' || window.location.protocol === 'file:') return;
+            // Verificar si podemos construir la URL relativa
+            new URL('/api/datos', window.location.href);
+        } catch (e) { return; }
+
         fetch('/api/datos')
             .then(r => r.json())
             .then(d => {
-                // Una vez recibimos datos, quitamos la clase skeleton visualmente
+                // Remover skeletons (animaciones de carga) si hay datos reales
                 const skeletons = document.querySelectorAll('.skeleton');
                 skeletons.forEach(el => {
-                    // Solo removemos la clase si tiene contenido real para mostrar
-                    if(el.innerText !== "Cargando..." && el.innerText !== "") {
-                        el.classList.remove('skeleton');
-                    }
+                    // Solo quitar la clase skeleton si el elemento ya tiene texto diferente al placeholder
+                    if(el.innerText !== "Cargando..." && el.innerText !== "") el.classList.remove('skeleton');
                 });
 
+                // Actualizar valores en el DOM
                 updateElement('producto-actual', d.producto_actual);
                 updateElement('pesaje-actual', d.pesaje_actual);
                 updateElement('lote-actual', d.lote_actual);
                 updateElement('pesaje-id', d.pesaje_id);
                 
-                // Trigger actualización estadísticas secundarias
+                // Disparar actualización de estadísticas secundarias
                 actualizarEstadisticas();
             })
             .catch(e => console.error("Error API Datos:", e));
     }
 
     function actualizarEstadisticas() {
+        try { if (window.location.protocol === 'blob:') return; } catch(e){}
+
         fetch('/api/estadisticas')
             .then(r => r.json())
             .then(data => {
+                // Renderizar listas de totales
                 renderList('total-diario', data.total_diario, 'producto', 'total_diario');
                 renderList('total-mensual', data.total_mensual, 'producto', 'total_mensual');
                 
-                // Hoja Verde
+                // Actualizar Hoja Verde
                 const hvDiv = document.getElementById("total-hoja-verde");
                 if(hvDiv) {
                     hvDiv.innerHTML = `
@@ -298,15 +352,17 @@
                     hvDiv.classList.remove('skeleton');
                 }
 
-                // Rendimiento
+                // Calcular y Actualizar Rendimiento
                 const rendDiv = document.getElementById("Rendimiento");
                 if(rendDiv) {
+                    // Sumar total mensual de productos procesados
                     const totalProd = data.total_mensual.reduce((acc, item) => acc + parseFloat(item.total_mensual || 0), 0);
                     const totalHV = parseFloat(data.total_hoja_verde_mensual || 0);
                     
-                    // Evitar división por cero
+                    // Cálculo seguro (evitar división por cero)
                     const rend = totalHV > 0 ? ((totalProd / totalHV) * 100).toFixed(2) : "0.00";
                     
+                    // Colorear según eficiencia
                     let colorClass = rend > 30 ? 'text-success' : (rend > 20 ? 'text-warning' : 'text-danger');
                     
                     rendDiv.innerHTML = `
@@ -318,7 +374,8 @@
             .catch(e => console.error("Error Estadisticas:", e));
     }
 
-    // Helpers
+    // --- Funciones Auxiliares ---
+
     function updateElement(id, val) {
         const el = document.getElementById(id);
         if(el) {
@@ -331,7 +388,7 @@
         const container = document.getElementById(containerId);
         if (!container) return;
         
-        // Si no hay lista o está vacía
+        // Si no hay lista o está vacía, mostrar mensaje
         if (!list || list.length === 0) {
             container.innerHTML = '<div class="text-muted text-center mt-3 small">Sin datos registrados hoy</div>';
             return;
@@ -351,6 +408,7 @@
 
     function formatNum(num) {
         if (num === undefined || num === null) return "0";
+        // Formateo estilo argentino (puntos para miles, coma para decimales)
         return new Intl.NumberFormat('es-AR').format(num);
     }
 </script>
