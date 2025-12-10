@@ -18,10 +18,7 @@
     }
 
     .input-time {
-        width: 35%;
-        /* Ajusta el tamaño del input time */
         text-align: center;
-        /* Centra el texto dentro del input */
     }
 </style>
 {% endblock %}
@@ -33,54 +30,85 @@
         <div class="spinner-border text-light" role="status">
             <span class="visually-hidden">Cargando...</span>
         </div>
-        <h2>Actualizando...</h2>
+        <h2>Procesando...</h2>
     </div>
 </div>
 
 <div class="container mt-5">
-    <h2 class="text-center mb-4">Generar Reporte de Pesajes</h2>
-
-    <!-- Formulario para rango de fechas -->
-    <form id="reporteForm" class="mb-4">
-        <div class="row">
-            <div class="col-md-5">
-                <label for="fecha_inicio" class="form-label">Fecha Inicio</label>
-                <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control input-time" required>
-            </div>
-            <div class="col-md-5">
-                <label for="hora_inicio" class="form-label">Hora Inicio (hh:mm)</label>
-                <input type="time" id="hora_inicio" name="hora_inicio" class="form-control input-time" required>
-            </div>
-            <div class="col-md-5">
-                <label for="fecha_final" class="form-label">Fecha Final</label>
-                <input type="date" id="fecha_final" name="fecha_final" class="form-control input-time" required>
-            </div>
-            <div class="col-md-5">
-                <label for="hora_final" class="form-label">Hora Final (hh:mm)</label>
-                <input type="time" id="hora_final" name="hora_final" class="form-control input-time" required>
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100">Generar Reporte</button>
-            </div>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white">
+            <h3 class="mb-0"><i class="bi bi-file-earmark-bar-graph me-2"></i>Generar Reportes de Producción</h3>
         </div>
-    </form>
+        <div class="card-body bg-light">
+            <form id="reporteForm">
+                <!-- Fila 1: Fechas -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label for="fecha_inicio" class="form-label fw-bold">Fecha Inicio</label>
+                        <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control input-time" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="hora_inicio" class="form-label fw-bold">Hora Inicio</label>
+                        <input type="time" id="hora_inicio" name="hora_inicio" class="form-control input-time" required value="00:00">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="fecha_final" class="form-label fw-bold">Fecha Final</label>
+                        <input type="date" id="fecha_final" name="fecha_final" class="form-control input-time" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="hora_final" class="form-label fw-bold">Hora Final</label>
+                        <input type="time" id="hora_final" name="hora_final" class="form-control input-time" required value="23:59">
+                    </div>
+                </div>
+
+                <!-- Fila 2: Tipo de Reporte y Botón Consultar -->
+                <div class="row align-items-end g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Tipo de Reporte PDF:</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="tipoReporte" id="tipoGeneral" value="general" checked>
+                                <label class="form-check-label" for="tipoGeneral">
+                                    Reporte General
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="tipoReporte" id="tipoDetallado" value="detallado">
+                                <label class="form-check-label" for="tipoDetallado">
+                                    Reporte Detallado (Por Día)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-2"></i>Consultar Datos</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Resultados del reporte -->
-    <div id="resultadosReporte" class="mt-5"></div>
+    <div id="resultadosReporte" class="mt-4"></div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="{{ url_for('static', filename='bootstrap/js/jquery.min.js') }}"></script>
 <script>
     $(document).ready(function () {
+        // Establecer fechas por defecto (Hoy)
+        const today = new Date().toISOString().split('T')[0];
+        $('#fecha_inicio').val(today);
+        $('#fecha_final').val(today);
+
         $('#reporteForm').on('submit', function (e) {
-            e.preventDefault();  // Evita la recarga de la página
+            e.preventDefault();
 
             const fecha_inicio = $('#fecha_inicio').val();
             const hora_inicio = $('#hora_inicio').val();
             const fecha_final = $('#fecha_final').val();
             const hora_final = $('#hora_final').val();
+            const tipo_reporte = $('input[name="tipoReporte"]:checked').val();
 
-            // Mostrar overlay mientras se ejecuta la consulta
             mostrarOverlay();
 
             $.ajax({
@@ -89,101 +117,113 @@
                 contentType: 'application/json',
                 data: JSON.stringify({ fecha_inicio, hora_inicio, fecha_final, hora_final }),
                 success: function (response) {
-                    // Limpiar el contenedor de resultados
                     $('#resultadosReporte').html('');
 
-                    if (response.resultados.length > 0) {
+                    if (response.resultados && response.resultados.length > 0) {
+                        // Construir tabla de vista previa
                         let tableHtml = `
-                        <h4 class="text-center">Resultados del Reporte</h4>
-                        <table class="table table-bordered table-striped mt-4">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>Producto</th>
-                                    <th>Primer Pesaje</th>
-                                    <th>Último Pesaje</th>
-                                    <th>Bolsas</th>
-                                    <th>Duración (Horas)</th>
-                                    <th>Tiempo Muerto (Horas)</th>
-                                    <th>Total en KG</th>
-                                </tr>
-                            </thead>
-                            <tbody>`;
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                                <span>Vista Previa de Resultados</span>
+                                <span class="badge bg-light text-dark">${response.resultados.length} Registros</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                    <table class="table table-bordered table-hover table-sm">
+                                        <thead class="table-dark sticky-top">
+                                            <tr>
+                                                <th>Producto</th>
+                                                <th>Inicio</th>
+                                                <th>Fin</th>
+                                                <th>Bolsas</th>
+                                                <th>Duración</th>
+                                                <th>T. Muerto</th>
+                                                <th>Total KG</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>`;
 
+                        let granTotal = 0;
                         response.resultados.forEach(row => {
                             tableHtml += `
                             <tr>
-                                <td>${row.producto || '-'}</td>
-                                <td>${row.primer_pesaje || '-'}</td>
-                                <td>${row.ultimo_pesaje || '-'}</td>
-                                <td>${row.cantidad_pesajes || '-'}</td>
-                                <td>${row.horas_totales || '-'}</td>
-                                <td>${row.tiempo_muerto_horas || '-'}</td>
-                                <td>${row.total_peso_kg || '-'}</td>
+                                <td>${row.producto}</td>
+                                <td>${row.primer_pesaje}</td>
+                                <td>${row.ultimo_pesaje}</td>
+                                <td>${row.cantidad_pesajes}</td>
+                                <td>${row.horas_totales}</td>
+                                <td>${row.tiempo_muerto_horas}</td>
+                                <td class="fw-bold">${row.total_peso_kg.toFixed(2)}</td>
                             </tr>`;
+                            granTotal += parseFloat(row.total_peso_kg);
                         });
 
                         tableHtml += `
-                            </tbody>
-                            <tfoot class="table-dark">
-                                <tr>
-                                    <td colspan="6" class="text-end"><strong>Total General (KG):</strong></td>
-                                    <td><strong>${response.resultados[0].total_general}</strong></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                        <div class="text-center">
-                            <button id="generarPDF" class="btn btn-success">
-                                Imprimir Reporte en PDF
-                            </button>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="alert alert-info mt-3 fw-bold text-end">
+                                    TOTAL GENERAL: ${granTotal.toLocaleString('es-AR', {minimumFractionDigits: 2})} KG
+                                </div>
+                                
+                                <div class="d-flex justify-content-center gap-3 mt-4">
+                                    <button id="generarPDF" class="btn btn-danger btn-lg">
+                                        <i class="bi bi-file-earmark-pdf me-2"></i>Descargar PDF (${tipo_reporte.toUpperCase()})
+                                    </button>
+                                    <button id="generarExcel" class="btn btn-success btn-lg">
+                                        <i class="bi bi-file-earmark-excel me-2"></i>Exportar a Excel
+                                    </button>
+                                </div>
+                            </div>
                         </div>`;
 
                         $('#resultadosReporte').html(tableHtml);
 
-                        // Agregar evento al botón de generar PDF
+                        // --- LOGICA BOTÓN PDF ---
                         $('#generarPDF').on('click', function () {
-                            // Mostrar overlay mientras se genera el PDF
                             mostrarOverlay();
-
-                            // Construir la URL con los parámetros
-                            let pdfUrl = `/admin/reportes/pdf?fecha_inicio=${encodeURIComponent(fecha_inicio)}&hora_inicio=${encodeURIComponent(hora_inicio)}&fecha_final=${encodeURIComponent(fecha_final)}&hora_final=${encodeURIComponent(hora_final)}`;
-
-                            // Realizar solicitud AJAX
-                            $.ajax({
-                                url: pdfUrl,
-                                method: 'GET',
-                                xhrFields: {
-                                    responseType: 'blob' // Importante para manejar archivos binarios
-                                },
-                                success: function (blob) {
-                                    // Crear URL del blob
-                                    const url = window.URL.createObjectURL(blob);
-
-                                    // Abrir el PDF en una nueva ventana/pestaña
-                                    const newWindow = window.open(url, '_blank');
-
-                                    // En caso de que no se pueda abrir, revocar el URL del objeto
-                                    if (!newWindow) {
-                                        alert('No se pudo abrir el PDF en una nueva pestaña.');
-                                        window.URL.revokeObjectURL(url);
-                                    }
-                                },
-                                error: function () {
-                                    alert('Error al generar el PDF.');
-                                },
-                                complete: function () {
-                                    // Ocultar overlay cuando termina la generación
-                                    ocultarOverlay();
-                                }
+                            // Usar el tipo seleccionado actualmente en el radio button
+                            const currentTipo = $('input[name="tipoReporte"]:checked').val();
+                            
+                            let params = new URLSearchParams({
+                                fecha_inicio: fecha_inicio,
+                                hora_inicio: hora_inicio,
+                                fecha_final: fecha_final,
+                                hora_final: hora_final,
+                                tipo: currentTipo
                             });
 
+                            fetch(`/admin/reportes/pdf?${params.toString()}`)
+                                .then(resp => resp.blob())
+                                .then(blob => {
+                                    const url = window.URL.createObjectURL(blob);
+                                    window.open(url, '_blank');
+                                    ocultarOverlay();
+                                })
+                                .catch(() => {
+                                    alert('Error generando PDF');
+                                    ocultarOverlay();
+                                });
+                        });
+
+                        // --- LOGICA BOTÓN EXCEL ---
+                        $('#generarExcel').on('click', function () {
+                            let params = new URLSearchParams({
+                                fecha_inicio: fecha_inicio,
+                                hora_inicio: hora_inicio,
+                                fecha_final: fecha_final,
+                                hora_final: hora_final
+                            });
+                            // Descarga directa
+                            window.location.href = `/admin/reportes/excel?${params.toString()}`;
                         });
 
                     } else {
-                        $('#resultadosReporte').html('<h4 class="text-center">No se encontraron resultados para las fechas seleccionadas.</h4>');
+                        $('#resultadosReporte').html('<div class="alert alert-warning text-center">No se encontraron datos para el rango seleccionado.</div>');
                     }
                 },
                 error: function () {
-                    alert('Error en la consulta. Verifique los datos ingresados.');
+                    alert('Error de conexión con el servidor.');
                 },
                 complete: function () {
                     ocultarOverlay();
@@ -192,12 +232,7 @@
         });
     });
 
-    function mostrarOverlay() {
-        $("#loadingOverlay").fadeIn();
-    }
-
-    function ocultarOverlay() {
-        $("#loadingOverlay").fadeOut();
-    }
+    function mostrarOverlay() { $("#loadingOverlay").fadeIn(); }
+    function ocultarOverlay() { $("#loadingOverlay").fadeOut(); }
 </script>
 {% endblock %}

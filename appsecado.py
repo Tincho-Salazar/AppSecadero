@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, make_response
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, make_response, send_file
 import mysql.connector
 from mysql.connector import pooling
 import pyodbc
@@ -26,6 +26,7 @@ import pandas as pd
 import os
 import contextlib
 import sys
+import openpyxl 
 
 # --- CONFIGURACIÓN ---
 class Config:
@@ -340,6 +341,169 @@ def reportes():
 @login_required
 @admin_required
 def reportes_pdf():
+    # Obtener parámetros
+    f_inicio = request.args.get('fecha_inicio')
+    h_inicio = request.args.get('hora_inicio')
+    f_final = request.args.get('fecha_final')
+    h_final = request.args.get('hora_final')
+    tipo_reporte = request.args.get('tipo', 'general')
+
+    if not all([f_inicio, h_inicio, f_final, h_final]):
+        flash("Faltan parámetros", "warning")
+        return redirect('/admin/reportes')
+
+    try:
+        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final) or []
+        
+        totales_por_producto = defaultdict(float)
+        for r in reportes:
+            totales_por_producto[r['producto']] += float(r['total_peso_kg'])
+
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+        y = height - 50
+
+        def draw_headers(y_pos):
+            p.setFont("Helvetica-Bold", 9)
+            p.setFillColorRGB(0.2, 0.2, 0.2)
+            headers = ["Producto", "Inicio", "Fin", "Bolsas", "Hs Tot", "T. Muerto", "Total KG"]
+            xs = [20, 200, 260, 320, 370, 430, 500]
+            for t, x in zip(headers, xs): p.drawString(x, y_pos, t)
+            p.setLineWidth(1)
+            p.line(20, y_pos - 5, width - 20, y_pos - 5)
+            p.setFillColorRGB(0, 0, 0)
+            return y_pos - 20
+
+        logo = os.path.join(app.static_folder, 'png', 'logo.jpg')
+        if os.path.exists(logo):
+            p.drawImage(logo, 20, height - 60, width=60, height=40, mask='auto')
+        
+        p.setFont("Helvetica-Bold", 14)
+        titulo = "Reporte Detallado" if tipo_reporte == 'detallado' else "Reporte General"
+        p.drawString(100, height - 40, f"{titulo} de Pesajes")
+        p.setFont("Helvetica", 10)
+        p.drawString(100, height - 55, f"Rango: {f_inicio} {h_inicio} al {f_final} {h_final}")
+        
+        y -= 80
+
+        if tipo_reporte == 'detallado':
+            datos_por_fecha = defaultdict(list)
+            for r in reportes:
+                datos_por_fecha[r['fecha']].append(r)
+            
+            fechas_ordenadas = sorted(datos_por_fecha.keys())
+
+            for fecha in fechas_ordenadas:
+                if y < 80:
+                    p.showPage()
+                    y = height - 50
+                
+                p.setFont("Helvetica-Bold", 11)
+                p.setFillColorRGB(0, 0.5, 0)
+                p.drawString(20, y, f"Fecha: {fecha}")
+                p.setFillColorRGB(0, 0, 0)
+                y -= 15
+                
+                y = draw_headers(y)
+                p.setFont("Helvetica", 9)
+
+                subtotal_dia = 0 # Inicializar subtotal del día
+                
+                for r in datos_por_fecha[fecha]:
+                    kg_producto = float(r['total_peso_kg'])
+                    subtotal_dia += kg_producto
+                    
+                    p.drawString(20, y, str(r['producto'])[:35])
+                    p.drawString(200, y, r['primer_pesaje'].strftime('%H:%M'))
+                    p.drawString(260, y, r['ultimo_pesaje'].strftime('%H:%M'))
+                    p.drawString(325, y, str(r['cantidad_pesajes']))
+                    p.drawString(375, y, str(r['horas_totales']))
+                    p.drawString(440, y, str(r['tiempo_muerto_horas']))
+                    p.drawString(500, y, f"{kg_producto:,.2f}")
+                    y -= 15
+                    
+                    if y < 50:
+                        p.showPage()
+                        y = height - 50
+                        y = draw_headers(y)
+                        p.setFont("Helvetica", 9)
+                
+                # --- SUBTOTAL POR DÍA ---
+                y -= 5
+                p.setLineWidth(0.5)
+                p.line(450, y, 560, y) # Línea divisoria sobre el subtotal
+                y -= 12
+                p.setFont("Helvetica-Bold", 9)
+                p.drawString(420, y, f"Total Día :")
+                p.drawString(500, y, f"{subtotal_dia:,.2f}")
+                p.setFont("Helvetica", 9) # Restaurar fuente normal
+                y -= 20 # Espacio extra para separar días
+
+        else:
+            y = draw_headers(y)
+            p.setFont("Helvetica", 9)
+            
+            for r in reportes:
+                p.drawString(20, y, str(r['producto'])[:35])
+                p.drawString(200, y, r['primer_pesaje'].strftime('%d/%m %H:%M'))
+                p.drawString(260, y, r['ultimo_pesaje'].strftime('%d/%m %H:%M'))
+                p.drawString(325, y, str(r['cantidad_pesajes']))
+                p.drawString(375, y, str(r['horas_totales']))
+                p.drawString(440, y, str(r['tiempo_muerto_horas']))
+                p.drawString(500, y, f"{r['total_peso_kg']:,.2f}")
+                y -= 15
+                
+                if y < 50:
+                    p.showPage()
+                    y = height - 50
+                    y = draw_headers(y)
+                    p.setFont("Helvetica", 9)
+
+        if y < 100 + (len(totales_por_producto) * 15):
+            p.showPage()
+            y = height - 50
+
+        y -= 20
+        p.setLineWidth(1)
+        p.line(20, y, width - 20, y)
+        y -= 20
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(20, y, "Resumen de Totales por Producto")
+        y -= 20
+        
+        p.setFont("Helvetica", 10)
+        total_global = 0
+        for prod, total in totales_por_producto.items():
+            p.drawString(40, y, f"- {prod}")
+            p.drawRightString(550, y, f"{total:,.2f} KG")
+            total_global += total
+            y -= 15
+        
+        y -= 10
+        p.line(250, y, 560, y)
+        y -= 20
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(250, y, "TOTAL PROCESADO:")
+        p.drawRightString(550, y, f"{total_global:,.2f} KG")
+
+        p.save()
+        pdf = buffer.getvalue()
+        buffer.close()
+        
+        response = make_response(pdf)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename=reporte_{tipo_reporte}.pdf'
+        return response
+
+    except Exception as e:
+        print(f"Error PDF: {e}")
+        return redirect('/admin/reportes')
+
+@app.route('/admin/reportes/excel', methods=['GET'])
+@login_required
+@admin_required
+def reportes_excel():
     f_inicio = request.args.get('fecha_inicio')
     h_inicio = request.args.get('hora_inicio')
     f_final = request.args.get('fecha_final')
@@ -350,64 +514,39 @@ def reportes_pdf():
         return redirect('/admin/reportes')
 
     try:
-        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final) or []
+        data = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final)
+        if not data:
+            flash("No hay datos para exportar", "warning")
+            return redirect('/admin/reportes')
+
+        df = pd.DataFrame(data)
         
-        buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-        width, height = A4
+        df = df[['fecha', 'producto', 'primer_pesaje', 'ultimo_pesaje', 'cantidad_pesajes', 
+                 'horas_totales', 'tiempo_muerto_horas', 'total_peso_kg']]
         
-        def draw_headers(y):
-            logo = os.path.join(app.static_folder, 'png', 'logo.jpg')
-            if os.path.exists(logo):
-                p.drawImage(logo, 20, height - 65, width=76, height=50, mask='auto')
+        df.columns = ['Fecha', 'Producto', 'Inicio', 'Fin', 'Cant. Bolsas', 
+                      'Horas Totales', 'Tiempo Muerto', 'Total KG']
+
+        totales = df.groupby('Producto')['Total KG'].sum().reset_index()
+        totales.columns = ['Producto', 'Total Acumulado KG']
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Detalle', index=False)
+            totales.to_excel(writer, sheet_name='Totales por Producto', index=False)
             
-            p.setFont("Helvetica-Bold", 10)
-            headers = ["Producto", "Inicio", "Fin", "Bolsas", "Duración", "T. Muerto", "Total KG"]
-            xs = [20, 180, 250, 320, 370, 440, 530]
-            for t, x in zip(headers, xs): p.drawString(x, y, t)
-            p.line(20, y - 5, width - 20, y - 5)
-
-        y = height - 130
-        p.setFont("Helvetica", 14)
-        p.drawString(100, height - 90, f"Reporte: {f_inicio} al {f_final}")
-        draw_headers(y)
-        y -= 20
-        p.setFont("Helvetica", 10)
-
-        for r in reportes:
-            p.drawString(20, y, str(r['producto'])[:30])
-            p.drawString(180, y, r['primer_pesaje'].strftime('%H:%M'))
-            p.drawString(250, y, r['ultimo_pesaje'].strftime('%H:%M'))
-            p.drawString(320, y, str(r['cantidad_pesajes']))
-            p.drawString(370, y, str(r['horas_totales']))
-            p.drawString(440, y, str(r['tiempo_muerto_horas']))
-            p.drawString(530, y, str(r['total_peso_kg']))
-            y -= 20
-            if y < 50:
-                p.showPage()
-                y = height - 50
-                draw_headers(y)
-                y -= 20
-                p.setFont("Helvetica", 10)
-
-        total_gen = reportes[0]['total_general'] if reportes else 0
-        p.line(20, y, 580, y)
-        y -= 20
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(400, y, "TOTAL GENERAL:")
-        p.drawString(530, y, f"{total_gen:.2f}")
+        output.seek(0)
         
-        p.save()
-        pdf = buffer.getvalue()
-        buffer.close()
-        
-        response = make_response(pdf)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = 'inline; filename=reporte.pdf'
-        return response
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=f"reporte_{f_inicio}_{f_final}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     except Exception as e:
-        print(f"Error PDF: {e}")
+        print(f"Error Excel: {e}")
+        flash(f"Error generando Excel: {str(e)}", "danger")
         return redirect('/admin/reportes')
 
 # --- API y BOKEH ---
