@@ -47,6 +47,13 @@
                         <label for="descripcion" class="form-label fw-bold">Descripción</label>
                         <textarea class="form-control" id="descripcion" name="descripcion" rows="3" placeholder="Detalles adicionales..."></textarea>
                     </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="propio" name="propio" value="1" checked>
+                        <label class="form-check-label fw-bold" for="propio">
+                            ¿Es Producto Propio?
+                        </label>
+                        <div class="form-text">Si está desmarcado, se considerará servicio a terceros y se excluirá de las estadísticas principales y del rendimiento de comercialización propia.</div>
+                    </div>
                     
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                         <button type="button" id="btnCancelar" class="btn btn-secondary me-md-2" style="display: none;">Cancelar</button>
@@ -72,6 +79,7 @@
                                 <th>Nombre</th>
                                 <th>Calidad</th>
                                 <th>Descripción</th>
+                                <th>Tipo</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -83,12 +91,20 @@
                                 <td><span class="badge bg-secondary">{{ producto['calidad'] }}</span></td>
                                 <td class="text-muted small">{{ producto['descripcion'] }}</td>
                                 <td>
+                                    {% if producto['propio'] %}
+                                    <span class="badge bg-success"><i class="bi bi-shop me-1"></i>Propio</span>
+                                    {% else %}
+                                    <span class="badge bg-info text-dark"><i class="bi bi-truck me-1"></i>Tercero</span>
+                                    {% endif %}
+                                </td>
+                                <td>
                                     <div class="btn-group" role="group">
                                         <button class="btn btn-warning btn-sm edit-producto text-white"
                                             data-id="{{ producto['producto_id'] }}" 
                                             data-nombre="{{ producto['nombre_producto'] }}"
                                             data-calidad="{{ producto['calidad'] }}" 
                                             data-descripcion="{{ producto['descripcion'] }}"
+                                            data-propio="{{ 1 if producto['propio'] else 0 }}"
                                             title="Editar">
                                             <i class="bi bi-pencil-fill"></i>
                                         </button>
@@ -159,12 +175,14 @@
             var nombre = $(this).data('nombre');
             var calidad = $(this).data('calidad');
             var descripcion = $(this).data('descripcion');
-
+            var propio = $(this).data('propio');
+ 
             // Rellenar formulario
             $('#nombre').val(nombre);
             $('#calidad').val(calidad);
             $('#descripcion').val(descripcion);
-
+            $('#propio').prop('checked', propio == 1 || propio === true);
+ 
             // CAMBIAR LA APARIENCIA DEL FORMULARIO A "MODO EDICIÓN"
             $('#formularioProducto').attr('action', '/editar_producto/' + id); // Cambiar URL de destino
             

@@ -26,7 +26,9 @@ import pandas as pd
 import os
 import contextlib
 import sys
-import openpyxl 
+import openpyxl
+import webbrowser
+import threading 
 
 # --- CONFIGURACIÓN ---
 class Config:
@@ -133,10 +135,21 @@ def get_sql_server_connection():
         print(f"Error ODBC: {e}")
         return None
 
+_hoja_verde_cache = {
+    'timestamp': 0,
+    'data': None
+}
+
 def get_peso_total_hoja_verde():
+    global _hoja_verde_cache
+    now = time.time()
+    if _hoja_verde_cache['data'] is not None and (now - _hoja_verde_cache['timestamp']) < 60:
+        return _hoja_verde_cache['data']
+
     try:
         conn = get_sql_server_connection()
-        if not conn: return {"total_hoja_verde_diario": 0, "total_hoja_verde_mensual": 0}
+        if not conn: 
+            return {"total_hoja_verde_diario": 0, "total_hoja_verde_mensual": 0, "online": False}
         cursor = conn.cursor()
         
         cursor.execute("SELECT SUM(pesoneto - pesotara) FROM ZTPESAJES WHERE CONVERT(DATE, LEFT(Fechaentrada, 8), 112) = CONVERT(DATE, GETDATE(), 112)")
@@ -146,9 +159,13 @@ def get_peso_total_hoja_verde():
         mensual = cursor.fetchone()[0] or 0
         
         conn.close()
-        return {"total_hoja_verde_diario": diario, "total_hoja_verde_mensual": mensual}
-    except:
-        return {"total_hoja_verde_diario": 0, "total_hoja_verde_mensual": 0}
+        res = {"total_hoja_verde_diario": diario, "total_hoja_verde_mensual": mensual, "online": True}
+        _hoja_verde_cache['timestamp'] = now
+        _hoja_verde_cache['data'] = res
+        return res
+    except Exception as e:
+        print(f"Error pyodbc (SQL Server Balanza): {e}")
+        return {"total_hoja_verde_diario": 0, "total_hoja_verde_mensual": 0, "online": False}
 
 # --- RUTAS DE LA APP ---
 
@@ -276,14 +293,16 @@ def gestionar_productos():
 
 @app.route('/crear_producto', methods=['POST'])
 def crear_producto():
-    execute_query("INSERT INTO productos (nombre_producto, calidad, descripcion) VALUES (%s, %s, %s)",
-                  (request.form['nombre'], request.form['calidad'], request.form['descripcion']), commit=True)
+    propio = 1 if request.form.get('propio') == '1' else 0
+    execute_query("INSERT INTO productos (nombre_producto, calidad, descripcion, propio) VALUES (%s, %s, %s, %s)",
+                  (request.form['nombre'], request.form['calidad'], request.form['descripcion'], propio), commit=True)
     return jsonify({'message': 'Producto creado'})
 
 @app.route('/editar_producto/<int:id>', methods=['POST'])
 def editar_producto(id):
-    execute_query("UPDATE productos SET nombre_producto=%s, calidad=%s, descripcion=%s WHERE producto_id=%s",
-                  (request.form['nombre'], request.form['calidad'], request.form['descripcion'], id), commit=True)
+    propio = 1 if request.form.get('propio') == '1' else 0
+    execute_query("UPDATE productos SET nombre_producto=%s, calidad=%s, descripcion=%s, propio=%s WHERE producto_id=%s",
+                  (request.form['nombre'], request.form['calidad'], request.form['descripcion'], propio, id), commit=True)
     return jsonify({'message': 'Producto actualizado'})
 
 @app.route('/eliminar_producto/<int:id>', methods=['DELETE'])
@@ -292,19 +311,25 @@ def eliminar_producto(id):
     return jsonify({'message': 'Producto eliminado'})
 
 # --- REPORTES ---
-def obtener_datos_reporte(fecha_inicio, hora_inicio, fecha_final, hora_final):
+def obtener_datos_reporte(fecha_inicio, hora_inicio, fecha_final, hora_final, origen='todos'):
     """Lógica centralizada para la query compleja de reportes."""
     inicio = f"{fecha_inicio} {hora_inicio}"
     final = f"{fecha_final} {hora_final}"
     
-    q = """
+    cond_origen = ""
+    if origen == 'propio':
+        cond_origen = "AND pr.propio = 1"
+    elif origen == 'tercero':
+        cond_origen = "AND pr.propio = 0"
+        
+    q = f"""
     WITH intervalos AS (
         SELECT p.producto_id, pr.nombre_producto AS producto, DATE(p.fecha_hora) AS fecha,
             MIN(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS primer_pesaje,
             MAX(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS ultimo_pesaje,
             SUM(p.peso) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora)) AS total_peso,
             TIMESTAMPDIFF(MINUTE, p.fecha_hora, LEAD(p.fecha_hora) OVER (PARTITION BY p.producto_id, DATE(p.fecha_hora) ORDER BY p.fecha_hora)) AS intervalo_minutos
-        FROM pesajes p JOIN productos pr ON p.producto_id = pr.producto_id WHERE p.fecha_hora BETWEEN %s AND %s
+        FROM pesajes p JOIN productos pr ON p.producto_id = pr.producto_id WHERE p.fecha_hora BETWEEN %s AND %s {cond_origen}
     )
     SELECT fecha, producto, MIN(primer_pesaje) AS primer_pesaje, MAX(ultimo_pesaje) AS ultimo_pesaje,
         TIMESTAMPDIFF(HOUR, MIN(primer_pesaje), MAX(ultimo_pesaje)) AS horas_totales,
@@ -321,7 +346,8 @@ def reportes():
             d = request.get_json()
             res = obtener_datos_reporte(
                 d['fecha_inicio'], d['hora_inicio'],
-                d['fecha_final'], d['hora_final']
+                d['fecha_final'], d['hora_final'],
+                d.get('origen', 'todos')
             ) or []
             
             json_out = []
@@ -347,13 +373,14 @@ def reportes_pdf():
     f_final = request.args.get('fecha_final')
     h_final = request.args.get('hora_final')
     tipo_reporte = request.args.get('tipo', 'general')
+    origen = request.args.get('origen', 'todos')
 
     if not all([f_inicio, h_inicio, f_final, h_final]):
         flash("Faltan parámetros", "warning")
         return redirect('/admin/reportes')
 
     try:
-        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final) or []
+        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final, origen) or []
         
         totales_por_producto = defaultdict(float)
         for r in reportes:
@@ -381,7 +408,8 @@ def reportes_pdf():
         
         p.setFont("Helvetica-Bold", 14)
         titulo = "Reporte Detallado" if tipo_reporte == 'detallado' else "Reporte General"
-        p.drawString(100, height - 40, f"{titulo} de Pesajes")
+        tipo_lbl = " - Propios" if origen == 'propio' else (" - Terceros" if origen == 'tercero' else "")
+        p.drawString(100, height - 40, f"{titulo} de Pesajes{tipo_lbl}")
         p.setFont("Helvetica", 10)
         p.drawString(100, height - 55, f"Rango: {f_inicio} {h_inicio} al {f_final} {h_final}")
         
@@ -508,13 +536,14 @@ def reportes_excel():
     h_inicio = request.args.get('hora_inicio')
     f_final = request.args.get('fecha_final')
     h_final = request.args.get('hora_final')
+    origen = request.args.get('origen', 'todos')
 
     if not all([f_inicio, h_inicio, f_final, h_final]):
         flash("Faltan parámetros", "warning")
         return redirect('/admin/reportes')
 
     try:
-        data = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final)
+        data = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final, origen)
         if not data:
             flash("No hay datos para exportar", "warning")
             return redirect('/admin/reportes')
@@ -563,12 +592,20 @@ def api_datos():
 @app.route('/api/estadisticas')
 def api_stats():
     hv = get_peso_total_hoja_verde()
-    td = execute_query("SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_diario FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id WHERE DATE(ps.fecha_hora) = CURDATE() GROUP BY producto")
-    tm = execute_query("SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE()) GROUP BY producto")
+    td_propio = execute_query("SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_diario FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id WHERE DATE(ps.fecha_hora) = CURDATE() AND p.propio = 1 GROUP BY producto")
+    td_terceros = execute_query("SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_diario FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id WHERE DATE(ps.fecha_hora) = CURDATE() AND p.propio = 0 GROUP BY producto")
+    
+    tm_propio = execute_query("SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE()) AND p.propio = 1 GROUP BY producto")
+    tm_terceros = execute_query("SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE()) AND p.propio = 0 GROUP BY producto")
+    
     return jsonify({
-        "total_diario": td or [], "total_mensual": tm or [],
+        "total_diario": td_propio or [],
+        "total_mensual": tm_propio or [],
+        "total_diario_terceros": td_terceros or [],
+        "total_mensual_terceros": tm_terceros or [],
         "total_hoja_verde_diario": hv['total_hoja_verde_diario'],
-        "total_hoja_verde_mensual": hv['total_hoja_verde_mensual']
+        "total_hoja_verde_mensual": hv['total_hoja_verde_mensual'],
+        "balanza_online": hv.get('online', False)
     })
 
 @app.route('/bokeh/pesajes')
@@ -599,11 +636,17 @@ def bokeh_pesajes():
     return render_template("bokeh_template.html", script=script, div=div, resources=INLINE.render(), titulo="Pesajes por Hora")
 
 # --- DASH APP (CON AUTO-REFRESH) ---
-def get_dash_data():
-    data = execute_query("""
+def get_dash_data(origen='propio'):
+    cond_origen = ""
+    if origen == 'propio':
+        cond_origen = "AND p.propio = 1"
+    elif origen == 'tercero':
+        cond_origen = "AND p.propio = 0"
+        
+    data = execute_query(f"""
         SELECT CONCAT(p.nombre_producto, ' ', p.calidad) AS producto, SUM(ps.peso) AS total_mensual
         FROM pesajes ps JOIN productos p ON ps.producto_id = p.producto_id
-        WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE())
+        WHERE MONTH(ps.fecha_hora) = MONTH(CURDATE()) AND YEAR(ps.fecha_hora) = YEAR(CURDATE()) {cond_origen}
         GROUP BY producto
     """)
     if not data: return None, None
@@ -615,17 +658,35 @@ dash_app.layout = html.Div([
         # Intervalo: 60 segundos
         dcc.Interval(id='intervalo-dash', interval=60*1000, n_intervals=0),
         html.Div([
-            dcc.Dropdown(
-                id='grafico-selector',
-                options=[
-                    {'label': 'Barras Horizontales (Ranking)', 'value': 'barh'},
-                    {'label': 'Torta (Distribución)', 'value': 'pie'},
-                    {'label': 'Barras Verticales', 'value': 'bar'}
-                ],
-                value='barh',
-                clearable=False,
-                className="mb-3"
-            ),
+            html.Div([
+                html.Label("Tipo de Gráfico:", className="fw-bold me-2"),
+                dcc.Dropdown(
+                    id='grafico-selector',
+                    options=[
+                        {'label': 'Barras Horizontales', 'value': 'barh'},
+                        {'label': 'Torta (Distribución)', 'value': 'pie'},
+                        {'label': 'Barras Verticales', 'value': 'bar'}
+                    ],
+                    value='barh',
+                    clearable=False,
+                    style={'width': '100%'}
+                ),
+            ], className="mb-3"),
+            html.Div([
+                html.Label("Origen del Producto:", className="fw-bold me-2"),
+                dcc.RadioItems(
+                    id='origen-selector',
+                    options=[
+                        {'label': ' Propios ', 'value': 'propio'},
+                        {'label': ' Terceros ', 'value': 'tercero'},
+                        {'label': ' Todos ', 'value': 'todos'}
+                    ],
+                    value='propio',
+                    inline=True,
+                    labelStyle={'display': 'inline-block', 'margin-right': '15px'},
+                    inputStyle={'margin-right': '5px'}
+                )
+            ], className="mb-3"),
             dcc.Graph(id='grafico')
         ], className="card shadow-sm p-3")
     ], className="container-fluid py-3")
@@ -634,10 +695,11 @@ dash_app.layout = html.Div([
 @dash_app.callback(
     Output('grafico', 'figure'),
     [Input('grafico-selector', 'value'),
+     Input('origen-selector', 'value'),
      Input('intervalo-dash', 'n_intervals')]
 )
-def update_graph(tipo, n):
-    prods, totals = get_dash_data()
+def update_graph(tipo, origen, n):
+    prods, totals = get_dash_data(origen)
     if not prods: 
         fig = go.Figure()
         fig.add_annotation(text="Sin datos este mes", showarrow=False, font={"size": 20})
@@ -659,10 +721,17 @@ def update_graph(tipo, n):
     return fig
 
 # --- EJECUCIÓN ---
+def open_browser():
+    # Esperar 1.5 segundos a que el servidor Flask se inicie y comience a escuchar
+    time.sleep(1.5)
+    webbrowser.open("http://127.0.0.1:5000")
+
 if __name__ == '__main__':
     # Eliminada simulación para entorno productivo
     if getattr(sys, 'frozen', False):
         print("INICIANDO MODO EJECUTABLE (PRODUCCIÓN)")
+        # Iniciar el navegador automáticamente en segundo plano
+        threading.Thread(target=open_browser, daemon=True).start()
         app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)
     else:
         print("INICIANDO MODO DESARROLLO")

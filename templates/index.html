@@ -135,6 +135,19 @@
 </div>
 
 <!-- Sección 2: Estadísticas de Texto -->
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-end">
+        <div class="btn-group shadow-sm" role="group" aria-label="Filtro Origen">
+            <button type="button" id="btn-filtro-propio" class="btn btn-success active" onclick="cambiarFiltroOrigen('propio')">
+                <i class="bi bi-shop me-1"></i> Producción Propia
+            </button>
+            <button type="button" id="btn-filtro-terceros" class="btn btn-outline-info text-dark" onclick="cambiarFiltroOrigen('terceros')">
+                <i class="bi bi-truck me-1"></i> Servicios a Terceros
+            </button>
+        </div>
+    </div>
+</div>
+
 <div class="row g-4">
     <!-- Columna Izquierda: Totales Diarios -->
     <div class="col-lg-4">
@@ -326,50 +339,130 @@
             .catch(e => console.error("Error API Datos:", e));
     }
 
+    let statsData = null;
+    let origenActivo = 'propio';
+
+    function cambiarFiltroOrigen(origen) {
+        if (origenActivo === origen) return;
+        origenActivo = origen;
+        
+        // Actualizar botones
+        const btnPropio = document.getElementById('btn-filtro-propio');
+        const btnTerceros = document.getElementById('btn-filtro-terceros');
+        
+        if (origen === 'propio') {
+            btnPropio.className = "btn btn-success active";
+            btnTerceros.className = "btn btn-outline-info text-dark";
+        } else {
+            btnPropio.className = "btn btn-outline-success text-dark";
+            btnTerceros.className = "btn btn-info text-white active";
+        }
+        
+        renderStats();
+    }
+
+    function renderStats() {
+        if (!statsData) return;
+        
+        const hvDiv = document.getElementById("total-hoja-verde");
+        const rendDiv = document.getElementById("Rendimiento");
+        const mpCard = document.getElementById("total-hoja-verde").closest('.card');
+        const mpCardHeader = mpCard.querySelector('.card-header');
+        
+        if (origenActivo === 'propio') {
+            // Renderizar acumulados propios
+            renderList('total-diario', statsData.total_diario, 'producto', 'total_diario');
+            renderList('total-mensual', statsData.total_mensual, 'producto', 'total_mensual');
+            
+            // Estilizar la tarjeta como success (verde)
+            if (mpCardHeader) {
+                const statusBadge = statsData.balanza_online 
+                    ? '<span class="badge bg-success ms-2" style="font-size: 0.7rem; border: 1px solid rgba(255,255,255,0.5);"><i class="bi bi-cloud-check-fill me-1"></i>Conectado</span>'
+                    : '<span class="badge bg-danger ms-2 animate__animated animate__flash animate__infinite" style="font-size: 0.7rem; border: 1px solid rgba(255,255,255,0.5);"><i class="bi bi-cloud-slash-fill me-1"></i>Offline</span>';
+                
+                mpCardHeader.innerHTML = `<div class="d-flex justify-content-between align-items-center w-100">
+                    <h5 class="fw-bold mb-0"><i class="bi bi-leaf me-2"></i>Materia Prima (Hoja Verde)</h5>
+                    ${statusBadge}
+                </div>`;
+                mpCardHeader.className = "card-header bg-success text-white pt-3 pb-3";
+            }
+            if (mpCard) {
+                mpCard.className = "card h-100 shadow-sm border-success";
+            }
+            
+            if (hvDiv) {
+                hvDiv.innerHTML = `
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Ingreso Diario:</span>
+                        <span class="fw-bold">${formatNum(statsData.total_hoja_verde_diario)} kg</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Acumulado Mensual:</span>
+                        <span class="fw-bold text-success">${formatNum(statsData.total_hoja_verde_mensual)} kg</span>
+                    </div>
+                `;
+                hvDiv.classList.remove('skeleton');
+            }
+            
+            if (rendDiv) {
+                const totalProd = statsData.total_mensual.reduce((acc, item) => acc + parseFloat(item.total_mensual || 0), 0);
+                const totalHV = parseFloat(statsData.total_hoja_verde_mensual || 0);
+                const rend = totalHV > 0 ? ((totalProd / totalHV) * 100).toFixed(2) : "0.00";
+                let colorClass = rend > 30 ? 'text-success' : (rend > 20 ? 'text-warning' : 'text-danger');
+                
+                rendDiv.innerHTML = `
+                    <div class="display-4 fw-bold ${colorClass}">${rend}%</div>
+                    <small class="text-muted">Prod. Seca / Hoja Verde</small>
+                `;
+            }
+        } else {
+            // Renderizar acumulados de terceros
+            renderList('total-diario', statsData.total_diario_terceros, 'producto', 'total_diario');
+            renderList('total-mensual', statsData.total_mensual_terceros, 'producto', 'total_mensual');
+            
+            // Estilizar la tarjeta como info (celeste/azul)
+            if (mpCardHeader) {
+                mpCardHeader.innerHTML = '<h5 class="fw-bold mb-0"><i class="bi bi-truck me-2"></i>Servicios de Secado</h5>';
+                mpCardHeader.className = "card-header bg-info text-dark pt-3 pb-3";
+            }
+            if (mpCard) {
+                mpCard.className = "card h-100 shadow-sm border-info";
+            }
+            
+            const totalDiarioT = statsData.total_diario_terceros.reduce((acc, item) => acc + parseFloat(item.total_diario || 0), 0);
+            const totalMensualT = statsData.total_mensual_terceros.reduce((acc, item) => acc + parseFloat(item.total_mensual || 0), 0);
+            
+            if (hvDiv) {
+                hvDiv.innerHTML = `
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Procesado Diario:</span>
+                        <span class="fw-bold">${formatNum(totalDiarioT)} kg</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Procesado Mensual:</span>
+                        <span class="fw-bold text-info">${formatNum(totalMensualT)} kg</span>
+                    </div>
+                `;
+                hvDiv.classList.remove('skeleton');
+            }
+            
+            if (rendDiv) {
+                rendDiv.innerHTML = `
+                    <div class="display-4 fw-bold text-info"><i class="bi bi-box-seam"></i></div>
+                    <small class="text-muted">Servicio a Terceros Activo</small>
+                `;
+            }
+        }
+    }
+
     function actualizarEstadisticas() {
         try { if (window.location.protocol === 'blob:') return; } catch(e){}
 
         fetch('/api/estadisticas')
             .then(r => r.json())
             .then(data => {
-                // Renderizar listas de totales
-                renderList('total-diario', data.total_diario, 'producto', 'total_diario');
-                renderList('total-mensual', data.total_mensual, 'producto', 'total_mensual');
-                
-                // Actualizar Hoja Verde
-                const hvDiv = document.getElementById("total-hoja-verde");
-                if(hvDiv) {
-                    hvDiv.innerHTML = `
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Ingreso Diario:</span>
-                            <span class="fw-bold">${formatNum(data.total_hoja_verde_diario)} kg</span>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span>Acumulado Mensual:</span>
-                            <span class="fw-bold text-success">${formatNum(data.total_hoja_verde_mensual)} kg</span>
-                        </div>
-                    `;
-                    hvDiv.classList.remove('skeleton');
-                }
-
-                // Calcular y Actualizar Rendimiento
-                const rendDiv = document.getElementById("Rendimiento");
-                if(rendDiv) {
-                    // Sumar total mensual de productos procesados
-                    const totalProd = data.total_mensual.reduce((acc, item) => acc + parseFloat(item.total_mensual || 0), 0);
-                    const totalHV = parseFloat(data.total_hoja_verde_mensual || 0);
-                    
-                    // Cálculo seguro (evitar división por cero)
-                    const rend = totalHV > 0 ? ((totalProd / totalHV) * 100).toFixed(2) : "0.00";
-                    
-                    // Colorear según eficiencia
-                    let colorClass = rend > 30 ? 'text-success' : (rend > 20 ? 'text-warning' : 'text-danger');
-                    
-                    rendDiv.innerHTML = `
-                        <div class="display-4 fw-bold ${colorClass}">${rend}%</div>
-                        <small class="text-muted">Prod. Seca / Hoja Verde</small>
-                    `;
-                }
+                statsData = data;
+                renderStats();
             })
             .catch(e => console.error("Error Estadisticas:", e));
     }
