@@ -86,6 +86,18 @@
                                     Detallado (Día)
                                 </label>
                             </div>
+                            <div class="form-check" id="radioDetalladoPropioWrapper" style="display: block;">
+                                <input class="form-check-input" type="radio" name="tipoReporte" id="tipoDetalladoPropio" value="detallado_propio">
+                                <label class="form-check-label" for="tipoDetalladoPropio">
+                                    Detallado Propio
+                                </label>
+                            </div>
+                            <div class="form-check" id="radioDetalladoTerceroWrapper" style="display: none;">
+                                <input class="form-check-input" type="radio" name="tipoReporte" id="tipoDetalladoTercero" value="detallado_tercero">
+                                <label class="form-check-label" for="tipoDetalladoTercero">
+                                    Detallado Tercero
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-3 text-end">
@@ -108,6 +120,30 @@
         $('#fecha_inicio').val(today);
         $('#fecha_final').val(today);
 
+        // Manejar cambio de origen para mostrar/ocultar reportes detallados correspondientes
+        $('#origen_filtro').on('change', function() {
+            const val = $(this).val();
+            if (val === 'propio') {
+                $('#radioDetalladoPropioWrapper').show();
+                $('#radioDetalladoTerceroWrapper').hide();
+                if ($('#tipoDetalladoTercero').is(':checked')) {
+                    $('#tipoGeneral').prop('checked', true);
+                }
+            } else if (val === 'tercero') {
+                $('#radioDetalladoPropioWrapper').hide();
+                $('#radioDetalladoTerceroWrapper').show();
+                if ($('#tipoDetalladoPropio').is(':checked')) {
+                    $('#tipoGeneral').prop('checked', true);
+                }
+            } else {
+                $('#radioDetalladoPropioWrapper').hide();
+                $('#radioDetalladoTerceroWrapper').hide();
+                if ($('#tipoDetalladoPropio').is(':checked') || $('#tipoDetalladoTercero').is(':checked')) {
+                    $('#tipoGeneral').prop('checked', true);
+                }
+            }
+        });
+
         $('#reporteForm').on('submit', function (e) {
             e.preventDefault();
 
@@ -124,7 +160,7 @@
                 url: '/admin/reportes',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({ fecha_inicio, hora_inicio, fecha_final, hora_final, origen }),
+                data: JSON.stringify({ fecha_inicio, hora_inicio, fecha_final, hora_final, origen, tipo: tipo_reporte }),
                 success: function (response) {
                     $('#resultadosReporte').html('');
 
@@ -140,31 +176,83 @@
                                 <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                                     <table class="table table-bordered table-hover table-sm">
                                         <thead class="table-dark sticky-top">
-                                            <tr>
+                                            <tr>`;
+
+                        if (tipo_reporte === 'detallado_propio') {
+                            tableHtml += `
+                                                <th>Fecha</th>
+                                                <th>Lote</th>
+                                                <th>Producto</th>
+                                                <th>Hora</th>
+                                                <th>Operario</th>
+                                                <th class="text-end">Peso KG</th>`;
+                        } else if (tipo_reporte === 'detallado_tercero') {
+                            tableHtml += `
+                                                <th>Productor</th>
+                                                <th>Fecha</th>
+                                                <th>Nro. Bolsa</th>
+                                                <th>Hora</th>
+                                                <th>Lote</th>
+                                                <th>Parcela</th>
+                                                <th>Carga</th>
+                                                <th>Zafra</th>
+                                                <th class="text-end">Peso KG</th>`;
+                        } else {
+                            tableHtml += `
                                                 <th>Producto</th>
                                                 <th>Inicio</th>
                                                 <th>Fin</th>
                                                 <th>Bolsas</th>
                                                 <th>Duración</th>
                                                 <th>T. Muerto</th>
-                                                <th>Total KG</th>
+                                                <th class="text-end">Total KG</th>`;
+                        }
+
+                        tableHtml += `
                                             </tr>
                                         </thead>
                                         <tbody>`;
 
                         let granTotal = 0;
                         response.resultados.forEach(row => {
-                            tableHtml += `
-                            <tr>
-                                <td>${row.producto}</td>
-                                <td>${row.primer_pesaje}</td>
-                                <td>${row.ultimo_pesaje}</td>
-                                <td>${row.cantidad_pesajes}</td>
-                                <td>${row.horas_totales}</td>
-                                <td>${row.tiempo_muerto_horas}</td>
-                                <td class="fw-bold">${row.total_peso_kg.toFixed(2)}</td>
-                            </tr>`;
-                            granTotal += parseFloat(row.total_peso_kg);
+                            if (tipo_reporte === 'detallado_propio') {
+                                tableHtml += `
+                                <tr>
+                                    <td>${row.fecha}</td>
+                                    <td>${row.lote}</td>
+                                    <td>${row.producto}</td>
+                                    <td>${row.hora}</td>
+                                    <td>${row.empleado || '-'}</td>
+                                    <td class="fw-bold text-end">${row.peso.toFixed(1)}</td>
+                                </tr>`;
+                                granTotal += parseFloat(row.peso);
+                            } else if (tipo_reporte === 'detallado_tercero') {
+                                tableHtml += `
+                                <tr>
+                                    <td>${row.productor_nombre}</td>
+                                    <td>${row.fecha}</td>
+                                    <td>${row.bolsa}</td>
+                                    <td>${row.hora}</td>
+                                    <td>${row.cd || '-'}</td>
+                                    <td>${row.parcela}</td>
+                                    <td>${row.carga}</td>
+                                    <td>${row.zafra}</td>
+                                    <td class="fw-bold text-end">${row.peso.toFixed(1)}</td>
+                                </tr>`;
+                                granTotal += parseFloat(row.peso);
+                            } else {
+                                tableHtml += `
+                                <tr>
+                                    <td>${row.producto}</td>
+                                    <td>${row.primer_pesaje}</td>
+                                    <td>${row.ultimo_pesaje}</td>
+                                    <td>${row.cantidad_pesajes}</td>
+                                    <td>${row.horas_totales}</td>
+                                    <td>${row.tiempo_muerto_horas}</td>
+                                    <td class="fw-bold text-end">${row.total_peso_kg.toFixed(2)}</td>
+                                </tr>`;
+                                granTotal += parseFloat(row.total_peso_kg);
+                            }
                         });
 
                         tableHtml += `
@@ -191,7 +279,6 @@
                         // --- LOGICA BOTÓN PDF ---
                         $('#generarPDF').on('click', function () {
                             mostrarOverlay();
-                            // Usar el tipo seleccionado actualmente en el radio button
                             const currentTipo = $('input[name="tipoReporte"]:checked').val();
                             const currentOrigen = $('#origen_filtro').val();
                             
@@ -220,12 +307,14 @@
                         // --- LOGICA BOTÓN EXCEL ---
                         $('#generarExcel').on('click', function () {
                             const currentOrigen = $('#origen_filtro').val();
+                            const currentTipo = $('input[name="tipoReporte"]:checked').val();
                             let params = new URLSearchParams({
                                 fecha_inicio: fecha_inicio,
                                 hora_inicio: hora_inicio,
                                 fecha_final: fecha_final,
                                 hora_final: hora_final,
-                                origen: currentOrigen
+                                origen: currentOrigen,
+                                tipo: currentTipo
                             });
                             // Descarga directa
                             window.location.href = `/admin/reportes/excel?${params.toString()}`;

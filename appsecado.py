@@ -311,11 +311,51 @@ def eliminar_producto(id):
     return jsonify({'message': 'Producto eliminado'})
 
 # --- REPORTES ---
-def obtener_datos_reporte(fecha_inicio, hora_inicio, fecha_final, hora_final, origen='todos'):
+def obtener_datos_reporte(fecha_inicio, hora_inicio, fecha_final, hora_final, origen='todos', tipo='general'):
     """Lógica centralizada para la query compleja de reportes."""
     inicio = f"{fecha_inicio} {hora_inicio}"
     final = f"{fecha_final} {hora_final}"
     
+    if tipo == 'detallado_tercero':
+        q = """
+        SELECT 
+            y.bolsa,
+            y.tiempo,
+            y.peso,
+            y.nprod,
+            y.parcela,
+            y.carga,
+            y.zafra,
+            p.nom AS prod_nombre,
+            p.ape AS prod_apellido,
+            p.cd,
+            CONCAT(IFNULL(p.nom, ''), ' ', IFNULL(p.ape, '')) AS productor_nombre
+        FROM YMA_pesajes y
+        LEFT JOIN YMA_productores p ON y.nprod = p.id
+        WHERE y.tiempo BETWEEN %s AND %s
+        ORDER BY p.nom, p.ape, DATE(y.tiempo), y.tiempo
+        """
+        return execute_query(q, (inicio, final))
+        
+    elif tipo == 'detallado_propio':
+        q = """
+        SELECT 
+            p.pesaje_id,
+            pr.nombre_producto AS producto,
+            pr.calidad,
+            CONCAT(pr.nombre_producto, ' ', IFNULL(pr.calidad, '')) AS producto_completo,
+            e.nombre AS empleado,
+            p.peso,
+            p.lote,
+            p.fecha_hora AS tiempo
+        FROM pesajes p
+        JOIN productos pr ON p.producto_id = pr.producto_id
+        LEFT JOIN empleados e ON p.empleado_id = e.id
+        WHERE pr.propio = 1 AND p.fecha_hora BETWEEN %s AND %s
+        ORDER BY DATE(p.fecha_hora), pr.nombre_producto, p.lote, p.fecha_hora
+        """
+        return execute_query(q, (inicio, final))
+        
     cond_origen = ""
     if origen == 'propio':
         cond_origen = "AND pr.propio = 1"
@@ -344,20 +384,49 @@ def reportes():
     if request.method == 'POST':
         try:
             d = request.get_json()
+            tipo = d.get('tipo', 'general')
             res = obtener_datos_reporte(
                 d['fecha_inicio'], d['hora_inicio'],
                 d['fecha_final'], d['hora_final'],
-                d.get('origen', 'todos')
+                d.get('origen', 'todos'),
+                tipo
             ) or []
             
             json_out = []
-            for r in res:
-                json_out.append({
-                    "producto": r['producto'], "primer_pesaje": r['primer_pesaje'].strftime("%d-%m %H:%M"),
-                    "ultimo_pesaje": r['ultimo_pesaje'].strftime("%d-%m %H:%M"), "cantidad_pesajes": r['cantidad_pesajes'],
-                    "horas_totales": r['horas_totales'], "tiempo_muerto_horas": r['tiempo_muerto_horas'],
-                    "total_peso_kg": float(r['total_peso_kg']), "total_general": float(r['total_general'])
-                })
+            if tipo == 'detallado_propio':
+                for r in res:
+                    json_out.append({
+                        "fecha": r['tiempo'].strftime("%Y-%m-%d"),
+                        "lote": r['lote'],
+                        "producto": f"{r['producto']} {r['calidad'] or ''}".strip(),
+                        "hora": r['tiempo'].strftime("%H:%M"),
+                        "empleado": r['empleado'],
+                        "peso": float(r['peso'])
+                    })
+            elif tipo == 'detallado_tercero':
+                for r in res:
+                    prod_nombre = f"{r['prod_nombre'] or ''} {r['prod_apellido'] or ''}".strip()
+                    if not prod_nombre:
+                        prod_nombre = f"Desconocido (ID: {r['nprod']})"
+                    json_out.append({
+                        "productor_nombre": prod_nombre,
+                        "fecha": r['tiempo'].strftime("%Y-%m-%d"),
+                        "bolsa": r['bolsa'],
+                        "hora": r['tiempo'].strftime("%H:%M"),
+                        "cd": r['cd'],
+                        "parcela": r['parcela'],
+                        "carga": r['carga'],
+                        "zafra": r['zafra'],
+                        "peso": float(r['peso'])
+                    })
+            else:
+                for r in res:
+                    json_out.append({
+                        "producto": r['producto'], "primer_pesaje": r['primer_pesaje'].strftime("%d-%m %H:%M"),
+                        "ultimo_pesaje": r['ultimo_pesaje'].strftime("%d-%m %H:%M"), "cantidad_pesajes": r['cantidad_pesajes'],
+                        "horas_totales": r['horas_totales'], "tiempo_muerto_horas": r['tiempo_muerto_horas'],
+                        "total_peso_kg": float(r['total_peso_kg']), "total_general": float(r['total_general'])
+                    })
             return jsonify({"resultados": json_out})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -380,11 +449,20 @@ def reportes_pdf():
         return redirect('/admin/reportes')
 
     try:
-        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final, origen) or []
+        reportes = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final, origen, tipo_reporte) or []
         
         totales_por_producto = defaultdict(float)
         for r in reportes:
-            totales_por_producto[r['producto']] += float(r['total_peso_kg'])
+            if tipo_reporte == 'detallado_propio':
+                p_str = f"{r['producto']} {r['calidad'] or ''}".strip()
+                totales_por_producto[p_str] += float(r['peso'])
+            elif tipo_reporte == 'detallado_tercero':
+                prod_nombre = f"{r['prod_nombre'] or ''} {r['prod_apellido'] or ''}".strip()
+                if not prod_nombre:
+                    prod_nombre = f"Desconocido (ID: {r['nprod']})"
+                totales_por_producto[prod_nombre] += float(r['peso'])
+            else:
+                totales_por_producto[r['producto']] += float(r['total_peso_kg'])
 
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=A4)
@@ -407,15 +485,176 @@ def reportes_pdf():
             p.drawImage(logo, 20, height - 60, width=60, height=40, mask='auto')
         
         p.setFont("Helvetica-Bold", 14)
-        titulo = "Reporte Detallado" if tipo_reporte == 'detallado' else "Reporte General"
+        if tipo_reporte == 'detallado_propio':
+            titulo = "Reporte Detallado de Pesajes Propios"
+        elif tipo_reporte == 'detallado_tercero':
+            titulo = "Reporte Detallado de Pesajes Terceros"
+        else:
+            titulo = "Reporte Detallado" if tipo_reporte == 'detallado' else "Reporte General"
+            
         tipo_lbl = " - Propios" if origen == 'propio' else (" - Terceros" if origen == 'tercero' else "")
-        p.drawString(100, height - 40, f"{titulo} de Pesajes{tipo_lbl}")
+        if tipo_reporte in ['detallado_propio', 'detallado_tercero']:
+            p.drawString(100, height - 40, titulo)
+        else:
+            p.drawString(100, height - 40, f"{titulo} de Pesajes{tipo_lbl}")
+            
         p.setFont("Helvetica", 10)
         p.drawString(100, height - 55, f"Rango: {f_inicio} {h_inicio} al {f_final} {h_final}")
         
         y -= 80
 
-        if tipo_reporte == 'detallado':
+        if tipo_reporte == 'detallado_propio':
+            # Group by Date, then by Product
+            datos_agrupados = defaultdict(lambda: defaultdict(list))
+            for r in reportes:
+                f_str = r['tiempo'].strftime("%Y-%m-%d")
+                p_str = f"{r['producto']} {r['calidad'] or ''}".strip()
+                datos_agrupados[f_str][p_str].append(r)
+            
+            fechas_ordenadas = sorted(datos_agrupados.keys())
+            
+            def draw_propio_headers(y_pos):
+                p.setFont("Helvetica-Bold", 9)
+                p.setFillColorRGB(0.2, 0.2, 0.2)
+                headers = ["Lote", "Hora", "Operario", "Peso KG"]
+                xs = [40, 120, 220, 480]
+                for t, x in zip(headers, xs):
+                    if t == "Peso KG":
+                        p.drawRightString(x, y_pos, t)
+                    else:
+                        p.drawString(x, y_pos, t)
+                p.setLineWidth(0.5)
+                p.line(40, y_pos - 4, width - 40, y_pos - 4)
+                p.setFillColorRGB(0, 0, 0)
+                return y_pos - 15
+
+            for fecha in fechas_ordenadas:
+                if y < 80:
+                    p.showPage()
+                    y = height - 50
+                
+                p.setFont("Helvetica-Bold", 11)
+                p.setFillColorRGB(0, 0.4, 0.8)
+                p.drawString(20, y, f"Fecha: {fecha}")
+                p.setFillColorRGB(0, 0, 0)
+                y -= 15
+                
+                for prod in sorted(datos_agrupados[fecha].keys()):
+                    if y < 80:
+                        p.showPage()
+                        y = height - 50
+                    
+                    p.setFont("Helvetica-Bold", 10)
+                    p.drawString(30, y, f"Producto: {prod}")
+                    y -= 12
+                    
+                    y = draw_propio_headers(y)
+                    p.setFont("Helvetica", 9)
+                    
+                    subtotal_prod = 0
+                    for r in datos_agrupados[fecha][prod]:
+                        if y < 50:
+                            p.showPage()
+                            y = height - 50
+                            y = draw_propio_headers(y)
+                            p.setFont("Helvetica", 9)
+                            
+                        p.drawString(40, y, str(r['lote']))
+                        p.drawString(120, y, r['tiempo'].strftime('%H:%M'))
+                        p.drawString(220, y, str(r['empleado'] or '-')[:40])
+                        p.drawRightString(480, y, f"{float(r['peso']):,.1f}")
+                        subtotal_prod += float(r['peso'])
+                        y -= 12
+                        
+                    y -= 3
+                    p.setLineWidth(0.5)
+                    p.line(400, y, 480, y)
+                    y -= 10
+                    p.setFont("Helvetica-Bold", 9)
+                    p.drawString(320, y, "Total Producto:")
+                    p.drawRightString(480, y, f"{subtotal_prod:,.1f} KG")
+                    p.setFont("Helvetica", 9)
+                    y -= 15
+
+        elif tipo_reporte == 'detallado_tercero':
+            # Group by Producer, then by Date
+            datos_agrupados = defaultdict(lambda: defaultdict(list))
+            for r in reportes:
+                prod_nombre = f"{r['prod_nombre'] or ''} {r['prod_apellido'] or ''}".strip()
+                if not prod_nombre:
+                    prod_nombre = f"Desconocido (ID: {r['nprod']})"
+                f_str = r['tiempo'].strftime("%Y-%m-%d")
+                datos_agrupados[prod_nombre][f_str].append(r)
+                
+            prods_ordenados = sorted(datos_agrupados.keys())
+            
+            def draw_tercero_headers(y_pos):
+                p.setFont("Helvetica-Bold", 9)
+                p.setFillColorRGB(0.2, 0.2, 0.2)
+                headers = ["Bolsa", "Hora", "Lote", "Parcela", "Carga", "Zafra", "Peso KG"]
+                xs = [40, 90, 140, 200, 260, 320, 480]
+                for t, x in zip(headers, xs):
+                    if t == "Peso KG":
+                        p.drawRightString(x, y_pos, t)
+                    else:
+                        p.drawString(x, y_pos, t)
+                p.setLineWidth(0.5)
+                p.line(40, y_pos - 4, width - 40, y_pos - 4)
+                p.setFillColorRGB(0, 0, 0)
+                return y_pos - 15
+                
+            for prod in prods_ordenados:
+                if y < 100:
+                    p.showPage()
+                    y = height - 50
+                    
+                p.setFont("Helvetica-Bold", 11)
+                p.setFillColorRGB(0.6, 0.2, 0)
+                p.drawString(20, y, f"Productor: {prod}")
+                p.setFillColorRGB(0, 0, 0)
+                y -= 15
+                
+                for fecha in sorted(datos_agrupados[prod].keys()):
+                    if y < 80:
+                        p.showPage()
+                        y = height - 50
+                        
+                    p.setFont("Helvetica-Bold", 10)
+                    p.drawString(30, y, f"Fecha: {fecha}")
+                    y -= 12
+                    
+                    y = draw_tercero_headers(y)
+                    p.setFont("Helvetica", 9)
+                    
+                    subtotal_dia = 0
+                    for r in datos_agrupados[prod][fecha]:
+                        if y < 50:
+                            p.showPage()
+                            y = height - 50
+                            y = draw_tercero_headers(y)
+                            p.setFont("Helvetica", 9)
+                            
+                        p.drawString(40, y, str(r['bolsa']))
+                        p.drawString(90, y, r['tiempo'].strftime('%H:%M'))
+                        p.drawString(140, y, str(r['cd'] or '-')[:10])
+                        p.drawString(200, y, str(r['parcela']))
+                        p.drawString(260, y, str(r['carga']))
+                        p.drawString(320, y, str(r['zafra']))
+                        p.drawRightString(480, y, f"{float(r['peso']):,.1f}")
+                        subtotal_dia += float(r['peso'])
+                        y -= 12
+                        
+                    y -= 3
+                    p.setLineWidth(0.5)
+                    p.line(400, y, 480, y)
+                    y -= 10
+                    p.setFont("Helvetica-Bold", 9)
+                    p.drawString(320, y, "Total Día:")
+                    p.drawRightString(480, y, f"{subtotal_dia:,.1f} KG")
+                    p.setFont("Helvetica", 9)
+                    y -= 15
+
+        elif tipo_reporte == 'detallado':
             datos_por_fecha = defaultdict(list)
             for r in reportes:
                 datos_por_fecha[r['fecha']].append(r)
@@ -497,7 +736,10 @@ def reportes_pdf():
         p.line(20, y, width - 20, y)
         y -= 20
         p.setFont("Helvetica-Bold", 12)
-        p.drawString(20, y, "Resumen de Totales por Producto")
+        if tipo_reporte == 'detallado_tercero':
+            p.drawString(20, y, "Resumen de Totales por Productor")
+        else:
+            p.drawString(20, y, "Resumen de Totales por Producto")
         y -= 20
         
         p.setFont("Helvetica", 10)
@@ -537,32 +779,66 @@ def reportes_excel():
     f_final = request.args.get('fecha_final')
     h_final = request.args.get('hora_final')
     origen = request.args.get('origen', 'todos')
+    tipo = request.args.get('tipo', 'general')
 
     if not all([f_inicio, h_inicio, f_final, h_final]):
         flash("Faltan parámetros", "warning")
         return redirect('/admin/reportes')
 
     try:
-        data = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final, origen)
+        data = obtener_datos_reporte(f_inicio, h_inicio, f_final, h_final, origen, tipo)
         if not data:
             flash("No hay datos para exportar", "warning")
             return redirect('/admin/reportes')
 
         df = pd.DataFrame(data)
         
-        df = df[['fecha', 'producto', 'primer_pesaje', 'ultimo_pesaje', 'cantidad_pesajes', 
-                 'horas_totales', 'tiempo_muerto_horas', 'total_peso_kg']]
-        
-        df.columns = ['Fecha', 'Producto', 'Inicio', 'Fin', 'Cant. Bolsas', 
-                      'Horas Totales', 'Tiempo Muerto', 'Total KG']
+        if tipo == 'detallado_propio':
+            df['Fecha'] = df['tiempo'].apply(lambda x: x.strftime('%Y-%m-%d'))
+            df['Hora'] = df['tiempo'].apply(lambda x: x.strftime('%H:%M'))
+            df['Producto'] = df['producto_completo']
+            df['Lote'] = df['lote']
+            df['Operario'] = df['empleado']
+            df['Peso KG'] = df['peso'].astype(float)
+            
+            df_out = df[['Fecha', 'Hora', 'Producto', 'Lote', 'Operario', 'Peso KG']]
+            
+            totales = df.groupby('Producto')['Peso KG'].sum().reset_index()
+            totales.columns = ['Producto', 'Total Acumulado KG']
+            
+        elif tipo == 'detallado_tercero':
+            def format_prod(row):
+                name = f"{row['prod_nombre'] or ''} {row['prod_apellido'] or ''}".strip()
+                return name if name else f"Desconocido (ID: {row['nprod']})"
+                
+            df['Productor'] = df.apply(format_prod, axis=1)
+            df['Fecha'] = df['tiempo'].apply(lambda x: x.strftime('%Y-%m-%d'))
+            df['Bolsa'] = df['bolsa']
+            df['Hora'] = df['tiempo'].apply(lambda x: x.strftime('%H:%M'))
+            df['Lote'] = df['cd']
+            df['Parcela'] = df['parcela']
+            df['Carga'] = df['carga']
+            df['Zafra'] = df['zafra']
+            df['Peso KG'] = df['peso'].astype(float)
+            
+            df_out = df[['Productor', 'Fecha', 'Bolsa', 'Hora', 'Lote', 'Parcela', 'Carga', 'Zafra', 'Peso KG']]
+            
+            totales = df.groupby('Productor')['Peso KG'].sum().reset_index()
+            totales.columns = ['Productor', 'Total Acumulado KG']
+            
+        else:
+            df_out = df[['fecha', 'producto', 'primer_pesaje', 'ultimo_pesaje', 'cantidad_pesajes', 
+                     'horas_totales', 'tiempo_muerto_horas', 'total_peso_kg']]
+            df_out.columns = ['Fecha', 'Producto', 'Inicio', 'Fin', 'Cant. Bolsas', 
+                          'Horas Totales', 'Tiempo Muerto', 'Total KG']
 
-        totales = df.groupby('Producto')['Total KG'].sum().reset_index()
-        totales.columns = ['Producto', 'Total Acumulado KG']
+            totales = df_out.groupby('Producto')['Total KG'].sum().reset_index()
+            totales.columns = ['Producto', 'Total Acumulado KG']
 
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Detalle', index=False)
-            totales.to_excel(writer, sheet_name='Totales por Producto', index=False)
+            df_out.to_excel(writer, sheet_name='Detalle', index=False)
+            totales.to_excel(writer, sheet_name='Totales', index=False)
             
         output.seek(0)
         
